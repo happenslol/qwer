@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use clap::{Parser, Args, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use qwer::Shell;
 
 #[derive(Debug, Parser)]
@@ -37,15 +37,15 @@ enum ShellOptions {
 impl ShellOptions {
     fn hook(&self, cmd: &str, hook_fn: &str) -> String {
         match self {
-            ShellOptions::Bash => qwer::Bash::hook(cmd, hook_fn),
-            ShellOptions::Zsh => qwer::Zsh::hook(cmd, hook_fn),
+            ShellOptions::Bash => qwer::shell::Bash::hook(cmd, hook_fn),
+            ShellOptions::Zsh => qwer::shell::Zsh::hook(cmd, hook_fn),
         }
     }
 
     fn export(&self, env: &qwer::Env) -> String {
         match self {
-            ShellOptions::Bash => qwer::Bash::export(env),
-            ShellOptions::Zsh => qwer::Zsh::export(env),
+            ShellOptions::Bash => qwer::shell::Bash::export(env),
+            ShellOptions::Zsh => qwer::shell::Zsh::export(env),
         }
     }
 
@@ -67,9 +67,11 @@ fn main() {
 }
 
 fn command_hook(shell: &ShellOptions) {
-    let self_path = std::env::args().next().expect("Failed to get executable path");
-    let shell_name = shell.name();
+    let self_path = std::env::args()
+        .next()
+        .expect("Failed to get executable path");
 
+    let shell_name = shell.name();
     let hook_cmd = format!("\"{self_path}\" export {shell_name}");
     let hook = shell.hook(&hook_cmd, "qwer_hook");
     print!("{hook}");
@@ -78,11 +80,9 @@ fn command_hook(shell: &ShellOptions) {
 fn command_export(shell: &ShellOptions) {
     let env = qwer::Env {
         path: vec![],
-        vars: HashMap::from([
-            ("foo", "bar"),
-        ])
+        vars: HashMap::from([("foo", "bar")]),
     };
 
-    let hook = shell.export(&env);
-    print!("{hook}");
+    let export = shell.export(&env);
+    print!("{export}");
 }
