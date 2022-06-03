@@ -1,0 +1,12 @@
+[package]
+name = "qwer-cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "qwer"
+path = "src/main.rs"
+
+[dependencies]
+qwer = { path = "../lib" }
+clap = { version = "3.1.18", features = ["derive"] }
