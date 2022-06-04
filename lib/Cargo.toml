@@ -3,6 +3,10 @@ name = "qwer"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
+duct = "0.13.5"
+thiserror = "1.0.31"
+semver = "1.0.9"
+
+[dev-dependencies]
+tempfile = "3.3.0"
