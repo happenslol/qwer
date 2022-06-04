@@ -116,10 +116,19 @@ pub fn parse_versions(content: &str) -> Result<Versions, VersionsError> {
 /// ```
 /// use qwer::versions::{parse_version, Version};
 ///
-/// assert!(matches!(parse_version("system"), Ok(Version::System)));
-/// assert!(matches!(parse_version("ref:123"), Ok(Version::Ref(_))));
-/// assert!(matches!(parse_version("path:123"), Ok(Version::Path(_))));
-/// assert!(matches!(parse_version("1.2.3"), Ok(Version::SemVer(_))));
+/// assert_eq!(parse_version("system").unwrap(), Version::System);
+///
+/// assert_eq!(parse_version("ref:123").unwrap(), Version::Ref("123".to_owned()));
+///
+/// assert_eq!(
+///     parse_version("path:/foo").unwrap(),
+///     Version::Path(std::path::PathBuf::from("/foo"))
+/// );
+///
+/// assert_eq!(
+///     parse_version("1").unwrap(),
+///     Version::SemVer(semver::VersionReq::parse("1").unwrap()),
+/// );
 /// ```
 pub fn parse_version(raw: &str) -> Result<Version, VersionParseError> {
     if raw == "system" {
@@ -182,8 +191,14 @@ system system
         let versions = parse_versions(to_parse).expect("failed to parse versions");
 
         assert_eq!(versions.len(), 5);
-        assert_eq!(versions["foo"], Version::SemVer(semver::VersionReq::parse("1.2.3").unwrap()));
-        assert_eq!(versions["bar"], Version::SemVer(semver::VersionReq::parse("2.1").unwrap()));
+        assert_eq!(
+            versions["foo"],
+            Version::SemVer(semver::VersionReq::parse("1.2.3").unwrap())
+        );
+        assert_eq!(
+            versions["bar"],
+            Version::SemVer(semver::VersionReq::parse("2.1").unwrap())
+        );
         assert_eq!(versions["ref"], Version::Ref("123".to_owned()));
         assert_eq!(versions["path"], Version::Path(PathBuf::from("/foo/bar")));
         assert_eq!(versions["system"], Version::System);
@@ -217,7 +232,10 @@ foo 2.1
         fs::write(workdir.as_ref().join("v"), "foo 1").expect("failed to write versions");
 
         let versions = find_versions(workdir.as_ref(), "v").expect("failed to find versions");
-        assert_eq!(versions["foo"], Version::SemVer(semver::VersionReq::parse("1").unwrap()));
+        assert_eq!(
+            versions["foo"],
+            Version::SemVer(semver::VersionReq::parse("1").unwrap())
+        );
     }
 
     #[test]
@@ -246,6 +264,9 @@ foo 2.1
         fs::write(workdir.as_ref().join("v"), "foo 1").expect("failed to write versions");
 
         let versions = find_versions(subdir, "v").expect("failed to find versions");
-        assert_eq!(versions["foo"], Version::SemVer(semver::VersionReq::parse("1").unwrap()));
+        assert_eq!(
+            versions["foo"],
+            Version::SemVer(semver::VersionReq::parse("1").unwrap())
+        );
     }
 }
