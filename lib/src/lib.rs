@@ -5,9 +5,11 @@ pub mod scripts;
 pub mod shell;
 pub mod versions;
 
-pub struct Env<'a> {
-    pub path: Vec<&'a str>,
-    pub vars: HashMap<&'a str, &'a str>,
+#[derive(Debug, Default)]
+pub struct Env {
+    pub path: Vec<String>,
+    pub vars: HashMap<String, String>,
+    pub run: Vec<String>,
 }
 
 pub trait Shell {
@@ -19,10 +21,14 @@ pub trait Shell {
 mod tests {
     use super::*;
 
-    pub fn test_env<'a>() -> Env<'a> {
+    pub fn test_env() -> Env {
         Env {
-            path: vec!["foo", "bar"],
-            vars: HashMap::from([("foo", "bar"), ("baz", "foo")]),
+            path: vec!["foo".to_owned(), "bar".to_owned()],
+            vars: HashMap::from([
+                ("foo".to_owned(), "bar".to_owned()),
+                ("baz".to_owned(), "foo".to_owned()),
+            ]),
+            run: vec!["echo foo".to_owned()],
         }
     }
 }

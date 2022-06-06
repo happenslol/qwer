@@ -8,7 +8,8 @@ pub const PLUGINS_DIR: &str = "plugins";
 pub const INSTALLS_DIR: &str = "installs";
 pub const DOWNLOADS_DIR: &str = "downloads";
 
-const TOOL_VERSIONS: &str = ".tool-versions";
+pub const TOOL_VERSIONS: &str = ".tool-versions";
+
 const DATA_DIR: &str = "qwer";
 
 pub fn get_data_dir() -> Result<PathBuf> {
@@ -25,7 +26,7 @@ pub fn get_dir(dir: &str) -> Result<PathBuf> {
     Ok(subdir)
 }
 
-pub fn get_global_tool_versions() -> Result<PathBuf> {
+pub fn _get_global_tool_versions() -> Result<PathBuf> {
     let home_dir = dirs::home_dir().ok_or_else(|| anyhow!("failed to get home dir"))?;
     Ok(home_dir.join(TOOL_VERSIONS))
 }

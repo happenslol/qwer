@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     fs,
     path::{Path, PathBuf},
 };
@@ -66,7 +65,7 @@ impl PluginScripts {
         script: P,
         env: &[(&str, &str)],
     ) -> Result<String, PluginScriptError> {
-        let mut expr = duct::cmd!(&*script.as_ref().to_string_lossy())
+        let mut expr = duct::cmd!(script.as_ref())
             .stderr_to_stdout()
             .stdout_capture()
             .unchecked();
@@ -137,7 +136,10 @@ impl PluginScripts {
                 ("ASDF_INSTALL_TYPE", version.install_type()),
                 ("ASDF_INSTALL_VERSION", version_str),
                 ("ASDF_INSTALL_PATH", &version_install_dir.to_string_lossy()),
-                ("ASDF_DOWNLOAD_PATH", &version_download_dir.to_string_lossy()),
+                (
+                    "ASDF_DOWNLOAD_PATH",
+                    &version_download_dir.to_string_lossy(),
+                ),
             ],
         )?;
 
@@ -256,26 +258,57 @@ impl PluginScripts {
         Ok(output)
     }
 
-    // Latest resolution
-
-    pub fn latest_stable(&self) -> Result<&Version, PluginScriptError> {
-        todo!()
-    }
-
     // Paths
 
-    pub fn list_bin_paths(&self) -> Result<Vec<String>, PluginScriptError> {
-        Ok(Vec::new())
+    pub fn list_bin_paths(&self, version: &Version) -> Result<Vec<String>, PluginScriptError> {
+        let script_path = self.plugin_dir.join("bin/list-bin-paths");
+        if !script_path.is_file() {
+            let default_bin_path = self.install_dir.join(version.version_str()).join("bin");
+            return Ok(vec![default_bin_path.to_string_lossy().to_string()]);
+        }
+
+        let version_dir = self.install_dir.join(version.version_str());
+        let output = duct::cmd!(script_path)
+            .env("ASDF_INSTALL_TYPE", version.install_type())
+            .env("ASDF_INSTALL_VERSION", &version.raw())
+            .env("ASDF_INSTALL_PATH", &*version_dir.to_string_lossy())
+            .read()?;
+
+        Ok(output
+            .trim()
+            .split(' ')
+            .map(|path| version_dir.join(path).to_string_lossy().to_string())
+            .collect())
     }
 
     // Env modification
 
-    pub fn exec_env(&self) -> Result<HashMap<String, String>, PluginScriptError> {
-        Ok(HashMap::new())
+    pub fn exec_env(&self, version: &Version) -> Option<String> {
+        let version_dir = self.install_dir.join(version.version_str());
+        let exec_path = self.plugin_dir.join("bin/exec-env");
+        if !exec_path.is_file() {
+            return None;
+        }
+
+        let run_str = format!(
+            r#"ASDF_INSTALL_TYPE={} ASDF_INSTALL_VERSION={} ASDF_INSTALL_PATH={} . "{}""#,
+            version.install_type(),
+            version.raw(),
+            version_dir.to_string_lossy(),
+            exec_path.to_string_lossy(),
+        );
+
+        Some(run_str)
     }
 
-    pub fn exec_path(&self) -> Result<Vec<String>, PluginScriptError> {
-        Ok(Vec::new())
+    pub fn exec_path(&self, _version: &Version) -> Result<Vec<String>, PluginScriptError> {
+        todo!()
+    }
+
+    // Latest resolution
+
+    pub fn latest_stable(&self) -> Result<&Version, PluginScriptError> {
+        todo!()
     }
 
     // Hooks

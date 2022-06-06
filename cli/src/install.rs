@@ -1,14 +1,15 @@
 use anyhow::Result;
-use qwer::versions::Version;
+use qwer::versions::{Version, Versions};
 
-use crate::dirs::{get_global_tool_versions, get_plugin_scripts};
+use crate::dirs::{get_plugin_scripts, TOOL_VERSIONS};
 
 pub fn install_all_local() -> Result<()> {
+    let _versions = Versions::find(std::env::current_dir()?, TOOL_VERSIONS)?;
     Ok(())
 }
 
 pub fn install_one_local(_name: String) -> Result<()> {
-    let _versions = get_global_tool_versions()?;
+    let _versions = Versions::find(std::env::current_dir()?, TOOL_VERSIONS)?;
     Ok(())
 }
 

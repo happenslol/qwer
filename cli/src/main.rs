@@ -1,10 +1,11 @@
-use std::collections::HashMap;
-
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use qwer::Shell;
 
+use crate::env::get_current_env;
+
 mod dirs;
+mod env;
 mod install;
 mod list;
 mod plugin;
@@ -166,13 +167,10 @@ fn main() -> Result<()> {
             Ok(())
         }
         Commands::Export { shell } => {
-            let env = qwer::Env {
-                path: vec![],
-                vars: HashMap::from([("foo", "bar")]),
-            };
-
-            let export = shell.export(&env);
-            print!("{export}");
+            if let Some(env) = get_current_env()? {
+                let export = shell.export(&env);
+                print!("{export}");
+            }
 
             Ok(())
         }
