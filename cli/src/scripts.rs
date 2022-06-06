@@ -1,14 +1,16 @@
-use std::{path::Path, fs};
-
 use anyhow::{Result, bail};
 
-pub fn run_script<P: AsRef<Path>>(path: P) -> Result<String> {
-    let script_contents = fs::read_to_string(path)?;
-    let output = duct::cmd("bash", &["-c", &script_contents])
+pub fn run_script(command: &str, env: &[(&str, &str)]) -> Result<String> {
+    let mut expr = duct::cmd!(command)
         .stderr_to_stdout()
         .stdout_capture()
-        .unchecked()
-        .run()?;
+        .unchecked();
+
+    for (key, val) in env {
+        expr = expr.env(key, val);
+    }
+
+    let output = expr.run()?;
 
     let output_str = String::from_utf8(output.stdout)?;
     if !output.status.success() {

@@ -1,43 +1,27 @@
-use std::{fs, path::PathBuf, time::Duration};
+use std::{fs, time::Duration};
 
 use anyhow::{bail, Result};
 use qwer::plugins::parse_short_repo_url;
 use tabled::{object::Segment, Alignment, Modify, Table, Tabled};
 
-use crate::get_data_dir;
-
-const REGISTRIES_DIR: &str = "registries";
-const PLUGIN_DIR: &str = "plugins";
+use crate::{get_dir, REGISTRIES_DIR, PLUGINS_DIR};
 
 const DEFAULT_PLUGIN_REGISTRY_URL: &str = "https://github.com/asdf-vm/asdf-plugins.git";
 const DEFAULT_PLUGIN_REGISTRY: &str = "default";
 
-pub fn get_registries_dir() -> Result<PathBuf> {
-    let data_dir = get_data_dir()?;
-    let registries_dir = data_dir.join(REGISTRIES_DIR);
-    fs::create_dir_all(&registries_dir)?;
-    Ok(registries_dir)
-}
-
-pub fn get_plugins_dir() -> Result<PathBuf> {
-    let data_dir = get_data_dir()?;
-    let plugin_dir = data_dir.join(PLUGIN_DIR);
-    fs::create_dir_all(&plugin_dir)?;
-    Ok(plugin_dir)
-}
-
 fn update_registry(url: &str, name: &str, _force: bool) -> Result<()> {
-    let registry_dir = get_registries_dir()?.join(name);
-    let modified = fs::metadata(&registry_dir)?.modified()?;
-    if modified.elapsed()? < Duration::from_secs(60 * 1000) {
-        return Ok(());
-    }
+    let registry_dir = get_dir(REGISTRIES_DIR)?.join(name);
 
     if !registry_dir.is_dir() {
         println!("initializing registry `{name}`...");
-        let registries_dir = get_registries_dir()?;
+        let registries_dir = get_dir(REGISTRIES_DIR)?;
         git::GitRepo::clone(&registries_dir, url, name, None)?;
     } else {
+        let modified = fs::metadata(&registry_dir)?.modified()?;
+        if modified.elapsed()? < Duration::from_secs(60 * 1000) {
+            return Ok(());
+        }
+
         println!("updating plugin repo...");
         let repo = git::GitRepo::new(&registry_dir)?;
         repo.update_to_remote_head()?;
@@ -47,7 +31,7 @@ fn update_registry(url: &str, name: &str, _force: bool) -> Result<()> {
 }
 
 pub fn add(name: String, git_url: Option<String>) -> Result<()> {
-    let plugin_dir = get_plugins_dir()?;
+    let plugin_dir = get_dir(PLUGINS_DIR)?;
     let add_plugin_dir = plugin_dir.join(&name);
     if add_plugin_dir.is_dir() {
         bail!("plugin with name `{name}` is already installed");
@@ -56,7 +40,7 @@ pub fn add(name: String, git_url: Option<String>) -> Result<()> {
     let git_url = match git_url {
         Some(git_url) => git_url,
         None => {
-            let registry_dir = get_registries_dir()?.join(DEFAULT_PLUGIN_REGISTRY);
+            let registry_dir = get_dir(REGISTRIES_DIR)?.join(DEFAULT_PLUGIN_REGISTRY);
             parse_short_repo_url(registry_dir, &name)?
         }
     };
@@ -93,7 +77,7 @@ struct ListItem {
 pub fn list(urls: bool, refs: bool) -> Result<()> {
     update_registry(DEFAULT_PLUGIN_REGISTRY_URL, DEFAULT_PLUGIN_REGISTRY, false)?;
 
-    let plugin_dir = get_plugins_dir()?;
+    let plugin_dir = get_dir(PLUGINS_DIR)?;
     let plugins = fs::read_dir(&plugin_dir)?
         .map(|dir| {
             let dir = dir?;
@@ -169,14 +153,14 @@ struct ListAllItem {
 pub fn list_all() -> Result<()> {
     update_registry(DEFAULT_PLUGIN_REGISTRY_URL, DEFAULT_PLUGIN_REGISTRY, false)?;
 
-    let plugin_repo_dir = get_registries_dir()?.join(DEFAULT_PLUGIN_REGISTRY);
-    let plugins_dir = get_plugins_dir()?;
+    let registry_dir = get_dir(REGISTRIES_DIR)?.join(DEFAULT_PLUGIN_REGISTRY);
+    let plugins_dir = get_dir(PLUGINS_DIR)?;
 
-    let plugins = fs::read_dir(plugin_repo_dir.join("plugins"))?
+    let plugins = fs::read_dir(registry_dir.join("plugins"))?
         .map(|plugin| {
             let plugin = plugin?;
             let name = String::from(plugin.file_name().to_string_lossy());
-            let url = parse_short_repo_url(&plugin_repo_dir, &name)?;
+            let url = parse_short_repo_url(&registry_dir, &name)?;
 
             let installed_plugin_dir = plugins_dir.join(&name);
             let installed = if installed_plugin_dir.is_dir() {
@@ -209,7 +193,7 @@ pub fn list_all() -> Result<()> {
 }
 
 pub fn remove(name: String) -> Result<()> {
-    let plugin_dir = get_plugins_dir()?;
+    let plugin_dir = get_dir(PLUGINS_DIR)?;
     let remove_plugin_dir = plugin_dir.join(&name);
     if !remove_plugin_dir.is_dir() {
         bail!("plugin `{name}` is not installed");
@@ -221,7 +205,7 @@ pub fn remove(name: String) -> Result<()> {
 }
 
 pub fn update(name: String, git_ref: Option<String>) -> Result<()> {
-    let update_plugin_dir = get_plugins_dir()?.join(&name);
+    let update_plugin_dir = get_dir(PLUGINS_DIR)?.join(&name);
     if !update_plugin_dir.is_dir() {
         bail!("plugin `{name}` is not installed");
     }
@@ -241,7 +225,7 @@ pub fn update(name: String, git_ref: Option<String>) -> Result<()> {
 }
 
 pub fn update_all() -> Result<()> {
-    let plugin_dir = get_plugins_dir()?;
+    let plugin_dir = get_dir(PLUGINS_DIR)?;
 
     for plugin in fs::read_dir(plugin_dir)? {
         let plugin = plugin?;
