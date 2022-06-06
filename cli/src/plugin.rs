@@ -4,7 +4,7 @@ use anyhow::{bail, Result};
 use qwer::plugins::parse_short_repo_url;
 use tabled::{object::Segment, Alignment, Modify, Table, Tabled};
 
-use crate::{get_dir, PLUGINS_DIR, REGISTRIES_DIR};
+use crate::dirs::{get_dir, PLUGINS_DIR, REGISTRIES_DIR};
 
 const DEFAULT_PLUGIN_REGISTRY_URL: &str = "https://github.com/asdf-vm/asdf-plugins.git";
 const DEFAULT_PLUGIN_REGISTRY: &str = "default";
