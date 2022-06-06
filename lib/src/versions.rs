@@ -52,7 +52,7 @@ impl From<PathBuf> for Version {
     }
 }
 
-pub type Versions = HashMap<String, Version>;
+pub type Versions = HashMap<String, Vec<Version>>;
 
 /// Walk the directory tree upwards until a file with the given filename is found,
 /// and parse it into a versions map. Convenience function that runs
@@ -77,23 +77,23 @@ pub fn find_versions<P: AsRef<Path>>(
 /// let versions = parse_versions("nodejs 16.0").unwrap();
 /// let semver = semver::VersionReq::parse("16.0").unwrap();
 ///
-/// assert_eq!(versions["nodejs"], Version::SemVer(semver));
+/// assert_eq!(versions["nodejs"], &[Version::SemVer(semver)]);
 /// ```
 pub fn parse_versions(content: &str) -> Result<Versions, VersionsError> {
     let lines = content
-        .split("\n")
+        .split('\n')
         .map(|line| line.trim())
         // Filter out comments
-        .filter(|line| !line.starts_with("#") && !line.is_empty())
+        .filter(|line| !line.starts_with('#') && !line.is_empty())
         // Remove comments from line ends, and trim the end
         // again to remove trailing whitespaces
-        .map(|line| line.split("#").next().unwrap().trim())
+        .map(|line| line.split('#').next().unwrap().trim())
         .collect::<Vec<&str>>();
 
     let mut result = Versions::with_capacity(lines.len());
     for line in lines {
-        let parts = line.split(" ").collect::<Vec<&str>>();
-        if parts.len() != 2 {
+        let parts = line.split(' ').collect::<Vec<&str>>();
+        if parts.len() <= 1 {
             return Err(VersionsError::InvalidEntry(line.to_owned()));
         }
 
@@ -101,7 +101,13 @@ pub fn parse_versions(content: &str) -> Result<Versions, VersionsError> {
             return Err(VersionsError::DuplicateEntry(parts[0].to_owned()));
         }
 
-        result.insert(parts[0].to_owned(), parse_version(parts[1])?);
+        let versions = parts
+            .iter()
+            .skip(1)
+            .map(|version| parse_version(version))
+            .collect::<Result<Vec<Version>, _>>()?;
+
+        result.insert(parts[0].to_owned(), versions);
     }
 
     Ok(result)
@@ -186,31 +192,39 @@ bar 2.1  # comment
 ref ref:123
 path path:/foo/bar
 system system
+multiple 1 ref:123 system
         "#;
 
         let versions = parse_versions(to_parse).expect("failed to parse versions");
 
-        assert_eq!(versions.len(), 5);
+        assert_eq!(versions.len(), 6);
         assert_eq!(
             versions["foo"],
-            Version::SemVer(semver::VersionReq::parse("1.2.3").unwrap())
+            &[Version::SemVer(semver::VersionReq::parse("1.2.3").unwrap())]
         );
         assert_eq!(
             versions["bar"],
-            Version::SemVer(semver::VersionReq::parse("2.1").unwrap())
+            &[Version::SemVer(semver::VersionReq::parse("2.1").unwrap())]
         );
-        assert_eq!(versions["ref"], Version::Ref("123".to_owned()));
-        assert_eq!(versions["path"], Version::Path(PathBuf::from("/foo/bar")));
-        assert_eq!(versions["system"], Version::System);
+        assert_eq!(versions["ref"], &[Version::Ref("123".to_owned())]);
+        assert_eq!(
+            versions["path"],
+            &[Version::Path(PathBuf::from("/foo/bar"))]
+        );
+        assert_eq!(versions["system"], &[Version::System]);
+        assert_eq!(
+            versions["multiple"],
+            &[
+                Version::SemVer(semver::VersionReq::parse("1").unwrap()),
+                Version::Ref("123".to_owned()),
+                Version::System,
+            ]
+        );
     }
 
     #[test]
     fn invalid_entries() {
-        let invalid = r#"foo  1.2.3 # two spaces"#;
-        let result = parse_versions(invalid);
-        assert!(matches!(result, Err(VersionsError::InvalidEntry(_))));
-
-        let invalid = r#"foo bar 1.2.3 # multiple entries"#;
+        let invalid = r#"foo1.2.3 # no space"#;
         let result = parse_versions(invalid);
         assert!(matches!(result, Err(VersionsError::InvalidEntry(_))));
     }
@@ -234,7 +248,7 @@ foo 2.1
         let versions = find_versions(workdir.as_ref(), "v").expect("failed to find versions");
         assert_eq!(
             versions["foo"],
-            Version::SemVer(semver::VersionReq::parse("1").unwrap())
+            &[Version::SemVer(semver::VersionReq::parse("1").unwrap())]
         );
     }
 
@@ -266,7 +280,7 @@ foo 2.1
         let versions = find_versions(subdir, "v").expect("failed to find versions");
         assert_eq!(
             versions["foo"],
-            Version::SemVer(semver::VersionReq::parse("1").unwrap())
+            &[Version::SemVer(semver::VersionReq::parse("1").unwrap())]
         );
     }
 }

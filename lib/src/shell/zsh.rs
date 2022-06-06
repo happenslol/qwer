@@ -1,4 +1,4 @@
-use crate::{Shell, Env};
+use crate::{Env, Shell};
 
 pub struct Zsh;
 
@@ -34,3 +34,39 @@ fi"#
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tests::test_env;
+
+    #[test]
+    fn export_zsh() {
+        let env = test_env();
+        let result = Zsh::export(&env);
+        assert!(result.contains("export PATH=$PATH:foo:bar;"));
+        assert!(result.contains("export foo=bar;"));
+        assert!(result.contains("export baz=foo;"));
+    }
+
+    #[test]
+    fn hook_zsh() {
+        assert_eq!(
+            Zsh::hook("\"./foo\" hook zsh", "foo_hook"),
+            String::from(
+                r#"_foo_hook() {
+  trap -- '' SIGINT;
+  eval "$("./foo" hook zsh)";
+  trap - SIGINT;
+}
+typeset -ag precmd_functions;
+if [[ -z "${precmd_functions[(r)_foo_hook]+1}" ]]; then
+  precmd_functions=( _foo_hook ${precmd_functions[@]} )
+fi
+typeset -ag chpwd_functions;
+if [[ -z "${chpwd_functions[(r)_foo_hook]+1}" ]]; then
+  chpwd_functions=( _foo_hook ${chpwd_functions[@]} )
+fi"#
+            )
+        );
+    }
+}
