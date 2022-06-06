@@ -82,11 +82,24 @@ impl PluginScripts {
         Ok(output_str)
     }
 
+    fn assert_script_exists<P: AsRef<Path>>(&self, script: P) -> Result<(), PluginScriptError> {
+        if !script.as_ref().is_file() {
+            return Err(PluginScriptError::ScriptNotFound(
+                script.as_ref().to_string_lossy().to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
     // Basic functionality
 
     pub fn list_all(&self) -> Result<Vec<String>, PluginScriptError> {
+        let list_all_script = self.plugin_dir.join("bin/list-all");
+        self.assert_script_exists(&list_all_script)?;
+
         Ok(self
-            .run_script("bin/list-all", &[])?
+            .run_script(&list_all_script, &[])?
             .trim()
             .split(' ')
             .map(|v| v.to_owned())
@@ -129,11 +142,7 @@ impl PluginScripts {
         }
 
         let install_script = self.plugin_dir.join("bin/install");
-        if !install_script.is_file() {
-            return Err(PluginScriptError::ScriptNotFound(
-                install_script.to_string_lossy().to_string(),
-            ));
-        }
+        self.assert_script_exists(&install_script)?;
 
         // TODO: Escape refs and paths correctly
         let version_str = version.version_str();
@@ -177,10 +186,7 @@ impl PluginScripts {
         }
 
         let uninstall_script = self.plugin_dir.join("bin/uninstall");
-        if !uninstall_script.is_file() {
-            fs::remove_dir_all(&version_install_dir)?;
-            return Ok(String::new());
-        }
+        self.assert_script_exists(&uninstall_script)?;
 
         let output = self.run_script(
             &uninstall_script,
