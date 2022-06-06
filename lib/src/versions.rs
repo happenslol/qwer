@@ -27,13 +27,61 @@ pub enum VersionsError {
 pub enum Version {
     Version(String),
     Ref(String),
-    Path(PathBuf),
+    Path(String),
     System,
 }
 
-impl From<PathBuf> for Version {
-    fn from(path: PathBuf) -> Self {
-        Self::Path(path)
+impl Version {
+    /// Parse a version string into an enum. This will first try to match `system`, then
+    /// a `ref`, then a `path` and then fall back to a default `version`. Since the fallback
+    /// is just using the whole string and pathbufs are not validated, this function does
+    /// not return an error.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::path::PathBuf;
+    /// use qwer::versions::Version;
+    ///
+    /// assert_eq!(Version::parse("system"), Version::System);
+    /// assert_eq!(Version::parse("ref:123"), Version::Ref("123".to_owned()));
+    /// assert_eq!(Version::parse("path:/foo"), Version::Path("/foo".to_owned()));
+    /// assert_eq!(Version::parse("1"), Version::Version("1".to_owned()));
+    /// ```
+    pub fn parse(raw: &str) -> Self {
+        if raw == "system" {
+            return Version::System;
+        }
+
+        if raw.starts_with("ref:") {
+            let rref = raw.trim_start_matches("ref:").to_owned();
+            return Version::Ref(rref);
+        }
+
+        if raw.starts_with("path:") {
+            let path = raw.trim_start_matches("path:").to_owned();
+            return Version::Path(path);
+        }
+
+        Version::Version(raw.to_owned())
+    }
+
+    pub fn install_type(&self) -> &'static str {
+        match self {
+            Self::Version(_) => "version",
+            Self::Ref(_) => "ref",
+            Self::Path(_) => "path",
+            Self::System => "system",
+        }
+    }
+
+    pub fn version_str(&self) -> &str {
+        match self {
+            Self::Version(version) => version,
+            Self::Ref(rref) => rref,
+            Self::Path(path) => path,
+            Self::System => "",
+        }
     }
 }
 
@@ -87,47 +135,13 @@ pub fn parse_versions(content: &str) -> Result<Versions, VersionsError> {
         let versions = parts
             .iter()
             .skip(1)
-            .map(|version| parse_version(version))
+            .map(|version| Version::parse(version))
             .collect::<Vec<_>>();
 
         result.insert(parts[0].to_owned(), versions);
     }
 
     Ok(result)
-}
-
-/// Parse a version string into an enum. This will first try to match `system`, then
-/// a `ref`, then a `path` and then fall back to a default `version`. Since the fallback
-/// is just using the whole string and pathbufs are not validated, this function does
-/// not return an error.
-///
-/// # Examples
-///
-/// ```
-/// use std::path::PathBuf;
-/// use qwer::versions::{parse_version, Version};
-///
-/// assert_eq!(parse_version("system"), Version::System);
-/// assert_eq!(parse_version("ref:123"), Version::Ref("123".to_owned()));
-/// assert_eq!(parse_version("path:/foo"), Version::Path(PathBuf::from("/foo")));
-/// assert_eq!(parse_version("1"), Version::Version("1".to_owned()));
-/// ```
-pub fn parse_version(raw: &str) -> Version {
-    if raw == "system" {
-        return Version::System;
-    }
-
-    if raw.starts_with("ref:") {
-        let rref = raw.trim_start_matches("ref:").to_owned();
-        return Version::Ref(rref);
-    }
-
-    if raw.starts_with("path:") {
-        let path_raw = raw.trim_start_matches("path:");
-        return PathBuf::from(path_raw).into();
-    }
-
-    Version::Version(raw.to_owned())
 }
 
 fn find_versions_file<P: AsRef<Path>>(
@@ -177,7 +191,7 @@ multiple 1 ref:123 system
         assert_eq!(versions["ref"], &[Version::Ref("123".to_owned())]);
         assert_eq!(
             versions["path"],
-            &[Version::Path(PathBuf::from("/foo/bar"))]
+            &[Version::Path("/foo/bar".to_owned())]
         );
         assert_eq!(versions["system"], &[Version::System]);
         assert_eq!(
