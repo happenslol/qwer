@@ -265,7 +265,6 @@ dependencies = [
 name = "qwer"
 version = "0.1.0"
 dependencies = [
- "semver",
  "tempfile",
  "thiserror",
 ]
@@ -277,6 +276,7 @@ dependencies = [
  "anyhow",
  "clap",
  "dirs",
+ "duct",
  "git",
  "qwer",
  "tabled",
@@ -310,12 +310,6 @@ checksum = "3acd125665422973a33ac9d3dd2df85edad0f4ae9b00dafb1a05e43a9f5ef8e7"
 dependencies = [
  "winapi",
 ]
-
-[[package]]
-name = "semver"
-version = "1.0.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8cb243bdfdb5936c8dc3c45762a19d12ab4550cdc753bc247637d4ec35a040fd"
 
 [[package]]
 name = "shared_child"

@@ -4,7 +4,9 @@ use anyhow::{anyhow, bail, Result};
 use clap::{Args, Parser, Subcommand};
 use qwer::Shell;
 
+mod install;
 mod plugin;
+mod scripts;
 
 #[derive(Debug, Parser)]
 #[clap(author, version, about)]
@@ -19,6 +21,11 @@ enum Commands {
     Export(Export),
 
     Plugin(Plugin),
+
+    Install {
+        name: Option<String>,
+        version: Option<String>,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -109,6 +116,7 @@ fn main() -> Result<()> {
         Commands::Hook(hook) => command_hook(hook.shell),
         Commands::Export(export) => command_export(export.shell),
         Commands::Plugin(plugin) => command_plugin(plugin.command),
+        Commands::Install { name, version } => command_install(name, version),
     }
 }
 
@@ -161,5 +169,14 @@ fn command_plugin(plugin: PluginCommand) -> Result<()> {
             (None, true) => plugin::update_all(),
             _ => bail!("plugin name or --all must be given"),
         },
+    }
+}
+
+fn command_install(name: Option<String>, version: Option<String>) -> Result<()> {
+    match (name, version) {
+        (None, None) => install::install_all_local(),
+        (Some(name), None) => install::install_one_local(name),
+        (Some(name), Some(version)) => install::install_one_version(name, version),
+        _ => unreachable!(),
     }
 }

@@ -21,29 +21,14 @@ pub enum VersionsError {
 
     #[error("io error while looking for versions file")]
     Io(#[from] io::Error),
-
-    #[error("invalid version found while parsing")]
-    VersionError(#[from] VersionParseError),
-}
-
-#[derive(Error, Debug)]
-pub enum VersionParseError {
-    #[error("no version format matched")]
-    InvalidSemver(#[from] semver::Error),
 }
 
 #[derive(Debug, PartialEq)]
 pub enum Version {
-    SemVer(semver::VersionReq),
+    Version(String),
     Ref(String),
     Path(PathBuf),
     System,
-}
-
-impl From<semver::VersionReq> for Version {
-    fn from(ver: semver::VersionReq) -> Self {
-        Self::SemVer(ver)
-    }
 }
 
 impl From<PathBuf> for Version {
@@ -75,9 +60,7 @@ pub fn find_versions<P: AsRef<Path>>(
 /// use qwer::versions::{parse_versions, Version};
 ///
 /// let versions = parse_versions("nodejs 16.0").unwrap();
-/// let semver = semver::VersionReq::parse("16.0").unwrap();
-///
-/// assert_eq!(versions["nodejs"], &[Version::SemVer(semver)]);
+/// assert_eq!(versions["nodejs"], &[Version::Version("16.0".to_owned())]);
 /// ```
 pub fn parse_versions(content: &str) -> Result<Versions, VersionsError> {
     let lines = content
@@ -88,11 +71,11 @@ pub fn parse_versions(content: &str) -> Result<Versions, VersionsError> {
         // Remove comments from line ends, and trim the end
         // again to remove trailing whitespaces
         .map(|line| line.split('#').next().unwrap().trim())
-        .collect::<Vec<&str>>();
+        .collect::<Vec<_>>();
 
     let mut result = Versions::with_capacity(lines.len());
     for line in lines {
-        let parts = line.split(' ').collect::<Vec<&str>>();
+        let parts = line.split(' ').collect::<Vec<_>>();
         if parts.len() <= 1 {
             return Err(VersionsError::InvalidEntry(line.to_owned()));
         }
@@ -105,7 +88,7 @@ pub fn parse_versions(content: &str) -> Result<Versions, VersionsError> {
             .iter()
             .skip(1)
             .map(|version| parse_version(version))
-            .collect::<Result<Vec<Version>, _>>()?;
+            .collect::<Vec<_>>();
 
         result.insert(parts[0].to_owned(), versions);
     }
@@ -114,46 +97,37 @@ pub fn parse_versions(content: &str) -> Result<Versions, VersionsError> {
 }
 
 /// Parse a version string into an enum. This will first try to match `system`, then
-/// a `ref`, then a `path` and then fall back to a `semver`. If nothing matches,
-/// this will always return a semver error.
+/// a `ref`, then a `path` and then fall back to a default `version`. Since the fallback
+/// is just using the whole string and pathbufs are not validated, this function does
+/// not return an error.
 ///
 /// # Examples
 ///
 /// ```
+/// use std::path::PathBuf;
 /// use qwer::versions::{parse_version, Version};
 ///
-/// assert_eq!(parse_version("system").unwrap(), Version::System);
-///
-/// assert_eq!(parse_version("ref:123").unwrap(), Version::Ref("123".to_owned()));
-///
-/// assert_eq!(
-///     parse_version("path:/foo").unwrap(),
-///     Version::Path(std::path::PathBuf::from("/foo"))
-/// );
-///
-/// assert_eq!(
-///     parse_version("1").unwrap(),
-///     Version::SemVer(semver::VersionReq::parse("1").unwrap()),
-/// );
+/// assert_eq!(parse_version("system"), Version::System);
+/// assert_eq!(parse_version("ref:123"), Version::Ref("123".to_owned()));
+/// assert_eq!(parse_version("path:/foo"), Version::Path(PathBuf::from("/foo")));
+/// assert_eq!(parse_version("1"), Version::Version("1".to_owned()));
 /// ```
-pub fn parse_version(raw: &str) -> Result<Version, VersionParseError> {
+pub fn parse_version(raw: &str) -> Version {
     if raw == "system" {
-        return Ok(Version::System);
+        return Version::System;
     }
 
     if raw.starts_with("ref:") {
         let rref = raw.trim_start_matches("ref:").to_owned();
-        return Ok(Version::Ref(rref));
+        return Version::Ref(rref);
     }
 
     if raw.starts_with("path:") {
         let path_raw = raw.trim_start_matches("path:");
-        return Ok(PathBuf::from(path_raw).into());
+        return PathBuf::from(path_raw).into();
     }
 
-    // If none of the above match, we try to parse a semver
-    let semver = semver::VersionReq::parse(raw)?;
-    Ok(semver.into())
+    Version::Version(raw.to_owned())
 }
 
 fn find_versions_file<P: AsRef<Path>>(
@@ -198,14 +172,8 @@ multiple 1 ref:123 system
         let versions = parse_versions(to_parse).expect("failed to parse versions");
 
         assert_eq!(versions.len(), 6);
-        assert_eq!(
-            versions["foo"],
-            &[Version::SemVer(semver::VersionReq::parse("1.2.3").unwrap())]
-        );
-        assert_eq!(
-            versions["bar"],
-            &[Version::SemVer(semver::VersionReq::parse("2.1").unwrap())]
-        );
+        assert_eq!(versions["foo"], &[Version::Version("1.2.3".to_owned())]);
+        assert_eq!(versions["bar"], &[Version::Version("2.1".to_owned())]);
         assert_eq!(versions["ref"], &[Version::Ref("123".to_owned())]);
         assert_eq!(
             versions["path"],
@@ -215,7 +183,7 @@ multiple 1 ref:123 system
         assert_eq!(
             versions["multiple"],
             &[
-                Version::SemVer(semver::VersionReq::parse("1").unwrap()),
+                Version::Version("1".to_owned()),
                 Version::Ref("123".to_owned()),
                 Version::System,
             ]
@@ -246,10 +214,7 @@ foo 2.1
         fs::write(workdir.as_ref().join("v"), "foo 1").expect("failed to write versions");
 
         let versions = find_versions(workdir.as_ref(), "v").expect("failed to find versions");
-        assert_eq!(
-            versions["foo"],
-            &[Version::SemVer(semver::VersionReq::parse("1").unwrap())]
-        );
+        assert_eq!(versions["foo"], &[Version::Version("1".to_owned())]);
     }
 
     #[test]
@@ -278,9 +243,6 @@ foo 2.1
         fs::write(workdir.as_ref().join("v"), "foo 1").expect("failed to write versions");
 
         let versions = find_versions(subdir, "v").expect("failed to find versions");
-        assert_eq!(
-            versions["foo"],
-            &[Version::SemVer(semver::VersionReq::parse("1").unwrap())]
-        );
+        assert_eq!(versions["foo"], &[Version::Version("1".to_owned())]);
     }
 }

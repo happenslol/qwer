@@ -12,14 +12,14 @@ const PLUGIN_DIR: &str = "plugins";
 const DEFAULT_PLUGIN_REGISTRY_URL: &str = "https://github.com/asdf-vm/asdf-plugins.git";
 const DEFAULT_PLUGIN_REGISTRY: &str = "default";
 
-fn get_registries_dir() -> Result<PathBuf> {
+pub fn get_registries_dir() -> Result<PathBuf> {
     let data_dir = get_data_dir()?;
     let registries_dir = data_dir.join(REGISTRIES_DIR);
     fs::create_dir_all(&registries_dir)?;
     Ok(registries_dir)
 }
 
-fn get_plugins_dir() -> Result<PathBuf> {
+pub fn get_plugins_dir() -> Result<PathBuf> {
     let data_dir = get_data_dir()?;
     let plugin_dir = data_dir.join(PLUGIN_DIR);
     fs::create_dir_all(&plugin_dir)?;
