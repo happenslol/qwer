@@ -152,15 +152,15 @@ fn main() -> Result<()> {
         Commands::Plugin { command } => command_plugin(command),
         Commands::Install { name, version } => command_install(name, version),
         Commands::Uninstall { name, version } => command_uninstall(name, version),
-        Commands::Latest { name, version } => todo!(),
+        Commands::Latest { name, version } => command_latest(name, version),
         Commands::List {
             command,
             name,
             version,
-        } => todo!(),
-        Commands::Global { name, version } => todo!(),
-        Commands::Local { name, version } => todo!(),
-        Commands::Shell { name, version } => todo!(),
+        } => command_list(command, name, version),
+        Commands::Global { name, version } => command_global(name, version),
+        Commands::Local { name, version } => command_local(name, version),
+        Commands::Shell { name, version } => command_shell(name, version),
     }
 }
 
@@ -245,4 +245,28 @@ fn command_install(name: Option<String>, version: Option<String>) -> Result<()> 
 
 fn command_uninstall(name: String, version: String) -> Result<()> {
     install::uninstall(name, version)
+}
+
+fn command_latest(_name: String, _version: Option<String>) -> Result<()> {
+    Ok(())
+}
+
+fn command_list(
+    _command: Option<ListCommand>,
+    _name: Option<String>,
+    _version: Option<String>,
+) -> Result<()> {
+    Ok(())
+}
+
+fn command_global(_name: String, _version: Vec<String>) -> Result<()> {
+    Ok(())
+}
+
+fn command_local(_name: String, _version: Vec<String>) -> Result<()> {
+    Ok(())
+}
+
+fn command_shell(_name: String, _version: Vec<String>) -> Result<()> {
+    Ok(())
 }

@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
 pub mod plugins;
+pub mod scripts;
 pub mod shell;
 pub mod versions;
-pub mod scripts;
 
 pub struct Env<'a> {
     pub path: Vec<&'a str>,

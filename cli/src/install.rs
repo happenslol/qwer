@@ -1,5 +1,5 @@
 use anyhow::Result;
-use qwer::{versions::Version, scripts::PluginScripts};
+use qwer::{scripts::PluginScripts, versions::Version};
 
 use crate::{get_dir, DOWNLOADS_DIR, INSTALLS_DIR, PLUGINS_DIR};
 
