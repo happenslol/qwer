@@ -42,8 +42,10 @@ mod tests {
     #[test]
     fn parse_short() {
         let workdir = tempfile::tempdir().expect("failed to create temp dir");
-        fs::write(workdir.as_ref().join("foo"), "repository = bar")
-            .expect("failed to write plugin file");
+        let plugins = workdir.path().join("plugins");
+        fs::create_dir_all(&plugins).expect("failed to create plugins dir");
+
+        fs::write(plugins.join("foo"), "repository = bar").expect("failed to write plugin file");
 
         let result = parse_short_repo_url(&workdir, "foo").expect("failed to parse");
         assert_eq!(result, "bar");
@@ -52,8 +54,10 @@ mod tests {
     #[test]
     fn parse_not_found() {
         let workdir = tempfile::tempdir().expect("failed to create temp dir");
-        fs::write(workdir.as_ref().join("foo"), "repository = bar")
-            .expect("failed to write plugin file");
+        let plugins = workdir.path().join("plugins");
+        fs::create_dir_all(&plugins).expect("failed to create plugins dir");
+
+        fs::write(plugins.join("foo"), "repository = bar").expect("failed to write plugin file");
 
         let result = parse_short_repo_url(&workdir, "bar");
         assert!(matches!(result, Err(ShortPluginError::NotFound(_))));
@@ -62,10 +66,13 @@ mod tests {
     #[test]
     fn parse_invalid_format() {
         let workdir = tempfile::tempdir().expect("failed to create temp dir");
-        fs::write(workdir.as_ref().join("foo"), "invalid format")
-            .expect("failed to write plugin file");
+        let plugins = workdir.path().join("plugins");
+        fs::create_dir_all(&plugins).expect("failed to create plugins dir");
+
+        fs::write(plugins.join("foo"), "invalid format").expect("failed to write plugin file");
 
         let result = parse_short_repo_url(&workdir, "foo");
+        dbg!(&result);
         assert!(matches!(result, Err(ShortPluginError::InvalidFile(_))));
     }
 }

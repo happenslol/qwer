@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     fs, io,
+    ops::Deref,
     path::{Path, PathBuf},
 };
 use thiserror::Error;
@@ -21,139 +22,150 @@ pub enum VersionsError {
 
     #[error("io error while looking for versions file")]
     Io(#[from] io::Error),
-
-    #[error("invalid version found while parsing")]
-    VersionError(#[from] VersionParseError),
 }
 
-#[derive(Error, Debug)]
-pub enum VersionParseError {
-    #[error("no version format matched")]
-    InvalidSemver(#[from] semver::Error),
-}
-
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Version {
-    SemVer(semver::VersionReq),
+    Version(String),
     Ref(String),
-    Path(PathBuf),
+    Path(String),
     System,
 }
 
-impl From<semver::VersionReq> for Version {
-    fn from(ver: semver::VersionReq) -> Self {
-        Self::SemVer(ver)
-    }
-}
-
-impl From<PathBuf> for Version {
-    fn from(path: PathBuf) -> Self {
-        Self::Path(path)
-    }
-}
-
-pub type Versions = HashMap<String, Vec<Version>>;
-
-/// Walk the directory tree upwards until a file with the given filename is found,
-/// and parse it into a versions map. Convenience function that runs
-/// `find_versions_file`, reads the found file to string and then runs `parse_versions`
-/// on it.
-pub fn find_versions<P: AsRef<Path>>(
-    workdir: P,
-    filename: &str,
-) -> Result<Versions, VersionsError> {
-    let versions_file_path = find_versions_file(workdir, filename)?;
-    let versions_content = fs::read_to_string(versions_file_path)?;
-    parse_versions(&versions_content)
-}
-
-/// Parse the contents of a version file and return a map of plugin to version.
-///
-/// # Examples
-///
-/// ```
-/// use qwer::versions::{parse_versions, Version};
-///
-/// let versions = parse_versions("nodejs 16.0").unwrap();
-/// let semver = semver::VersionReq::parse("16.0").unwrap();
-///
-/// assert_eq!(versions["nodejs"], &[Version::SemVer(semver)]);
-/// ```
-pub fn parse_versions(content: &str) -> Result<Versions, VersionsError> {
-    let lines = content
-        .split('\n')
-        .map(|line| line.trim())
-        // Filter out comments
-        .filter(|line| !line.starts_with('#') && !line.is_empty())
-        // Remove comments from line ends, and trim the end
-        // again to remove trailing whitespaces
-        .map(|line| line.split('#').next().unwrap().trim())
-        .collect::<Vec<&str>>();
-
-    let mut result = Versions::with_capacity(lines.len());
-    for line in lines {
-        let parts = line.split(' ').collect::<Vec<&str>>();
-        if parts.len() <= 1 {
-            return Err(VersionsError::InvalidEntry(line.to_owned()));
+impl Version {
+    /// Parse a version string into an enum. This will first try to match `system`, then
+    /// a `ref`, then a `path` and then fall back to a default `version`. Since the fallback
+    /// is just using the whole string and pathbufs are not validated, this function does
+    /// not return an error.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::path::PathBuf;
+    /// use qwer::versions::Version;
+    ///
+    /// assert_eq!(Version::parse("system"), Version::System);
+    /// assert_eq!(Version::parse("ref:123"), Version::Ref("123".to_owned()));
+    /// assert_eq!(Version::parse("path:/foo"), Version::Path("/foo".to_owned()));
+    /// assert_eq!(Version::parse("1"), Version::Version("1".to_owned()));
+    /// ```
+    pub fn parse(raw: &str) -> Self {
+        if raw == "system" {
+            return Version::System;
         }
 
-        if result.contains_key(parts[0]) {
-            return Err(VersionsError::DuplicateEntry(parts[0].to_owned()));
+        if raw.starts_with("ref:") {
+            let rref = raw.trim_start_matches("ref:").to_owned();
+            return Version::Ref(rref);
         }
 
-        let versions = parts
-            .iter()
-            .skip(1)
-            .map(|version| parse_version(version))
-            .collect::<Result<Vec<Version>, _>>()?;
+        if raw.starts_with("path:") {
+            let path = raw.trim_start_matches("path:").to_owned();
+            return Version::Path(path);
+        }
 
-        result.insert(parts[0].to_owned(), versions);
+        Version::Version(raw.to_owned())
     }
 
-    Ok(result)
+    pub fn install_type(&self) -> &'static str {
+        match self {
+            Self::Version(_) => "version",
+            Self::Ref(_) => "ref",
+            Self::Path(_) => "path",
+            Self::System => "system",
+        }
+    }
+
+    pub fn version_str(&self) -> &str {
+        match self {
+            Self::Version(version) => version,
+            Self::Ref(rref) => rref,
+            Self::Path(path) => path,
+            Self::System => "",
+        }
+    }
+
+    pub fn raw(&self) -> String {
+        match self {
+            Self::Version(version) => version.to_owned(),
+            Self::Ref(rref) => format!("ref:{rref}"),
+            Self::Path(path) => format!("path:{path}"),
+            Self::System => "system".to_owned(),
+        }
+    }
 }
 
-/// Parse a version string into an enum. This will first try to match `system`, then
-/// a `ref`, then a `path` and then fall back to a `semver`. If nothing matches,
-/// this will always return a semver error.
-///
-/// # Examples
-///
-/// ```
-/// use qwer::versions::{parse_version, Version};
-///
-/// assert_eq!(parse_version("system").unwrap(), Version::System);
-///
-/// assert_eq!(parse_version("ref:123").unwrap(), Version::Ref("123".to_owned()));
-///
-/// assert_eq!(
-///     parse_version("path:/foo").unwrap(),
-///     Version::Path(std::path::PathBuf::from("/foo"))
-/// );
-///
-/// assert_eq!(
-///     parse_version("1").unwrap(),
-///     Version::SemVer(semver::VersionReq::parse("1").unwrap()),
-/// );
-/// ```
-pub fn parse_version(raw: &str) -> Result<Version, VersionParseError> {
-    if raw == "system" {
-        return Ok(Version::System);
+#[derive(Debug, Clone)]
+pub struct Versions(HashMap<String, Vec<Version>>);
+
+impl Versions {
+    /// Parse the contents of a version file and return a map of plugin to version.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use qwer::versions::{Version, Versions};
+    ///
+    /// let versions = Versions::parse("nodejs 16.0").unwrap();
+    /// assert_eq!(versions["nodejs"], &[Version::Version("16.0".to_owned())]);
+    /// ```
+    pub fn parse(content: &str) -> Result<Self, VersionsError> {
+        let lines = content
+            .split('\n')
+            .map(|line| line.trim())
+            // Filter out comments
+            .filter(|line| !line.starts_with('#') && !line.is_empty())
+            // Remove comments from line ends, and trim the end
+            // again to remove trailing whitespaces
+            .map(|line| line.split('#').next().unwrap().trim())
+            .collect::<Vec<_>>();
+
+        let mut result = Versions(HashMap::with_capacity(lines.len()));
+        for line in lines {
+            let parts = line.split(' ').collect::<Vec<_>>();
+            if parts.len() <= 1 {
+                return Err(VersionsError::InvalidEntry(line.to_owned()));
+            }
+
+            if result.0.contains_key(parts[0]) {
+                return Err(VersionsError::DuplicateEntry(parts[0].to_owned()));
+            }
+
+            let versions = parts
+                .iter()
+                .skip(1)
+                .map(|version| Version::parse(version))
+                .collect::<Vec<_>>();
+
+            result.0.insert(parts[0].to_owned(), versions);
+        }
+
+        Ok(result)
     }
 
-    if raw.starts_with("ref:") {
-        let rref = raw.trim_start_matches("ref:").to_owned();
-        return Ok(Version::Ref(rref));
+    /// Find a file in the local directory and parse it into a versions map.
+    /// and parse it into a versions map.
+    pub fn find<P: AsRef<Path>>(workdir: P, filename: &str) -> Result<Self, VersionsError> {
+        let versions_file_path = find_versions_file(workdir, filename)?;
+        let versions_content = fs::read_to_string(versions_file_path)?;
+        Self::parse(&versions_content)
     }
 
-    if raw.starts_with("path:") {
-        let path_raw = raw.trim_start_matches("path:");
-        return Ok(PathBuf::from(path_raw).into());
+    /// Walk the directory tree upwards until a file with the given filename is found,
+    /// and parse it into a versions map.
+    pub fn find_any<P: AsRef<Path>>(workdir: P, filename: &str) -> Result<Self, VersionsError> {
+        let versions_file_path = find_versions_file(workdir, filename)?;
+        let versions_content = fs::read_to_string(versions_file_path)?;
+        Self::parse(&versions_content)
     }
+}
 
-    // If none of the above match, we try to parse a semver
-    let semver = semver::VersionReq::parse(raw)?;
-    Ok(semver.into())
+impl Deref for Versions {
+    type Target = HashMap<String, Vec<Version>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 fn find_versions_file<P: AsRef<Path>>(
@@ -195,27 +207,18 @@ system system
 multiple 1 ref:123 system
         "#;
 
-        let versions = parse_versions(to_parse).expect("failed to parse versions");
+        let versions = Versions::parse(to_parse).expect("failed to parse versions");
 
         assert_eq!(versions.len(), 6);
-        assert_eq!(
-            versions["foo"],
-            &[Version::SemVer(semver::VersionReq::parse("1.2.3").unwrap())]
-        );
-        assert_eq!(
-            versions["bar"],
-            &[Version::SemVer(semver::VersionReq::parse("2.1").unwrap())]
-        );
+        assert_eq!(versions["foo"], &[Version::Version("1.2.3".to_owned())]);
+        assert_eq!(versions["bar"], &[Version::Version("2.1".to_owned())]);
         assert_eq!(versions["ref"], &[Version::Ref("123".to_owned())]);
-        assert_eq!(
-            versions["path"],
-            &[Version::Path(PathBuf::from("/foo/bar"))]
-        );
+        assert_eq!(versions["path"], &[Version::Path("/foo/bar".to_owned())]);
         assert_eq!(versions["system"], &[Version::System]);
         assert_eq!(
             versions["multiple"],
             &[
-                Version::SemVer(semver::VersionReq::parse("1").unwrap()),
+                Version::Version("1".to_owned()),
                 Version::Ref("123".to_owned()),
                 Version::System,
             ]
@@ -225,7 +228,7 @@ multiple 1 ref:123 system
     #[test]
     fn invalid_entries() {
         let invalid = r#"foo1.2.3 # no space"#;
-        let result = parse_versions(invalid);
+        let result = Versions::parse(invalid);
         assert!(matches!(result, Err(VersionsError::InvalidEntry(_))));
     }
 
@@ -236,7 +239,7 @@ foo 1.2.3
 foo 2.1
         "#;
 
-        let result = parse_versions(invalid);
+        let result = Versions::parse(invalid);
         assert!(matches!(result, Err(VersionsError::DuplicateEntry(_))));
     }
 
@@ -245,11 +248,8 @@ foo 2.1
         let workdir = tempfile::tempdir().expect("failed to create temp dir");
         fs::write(workdir.as_ref().join("v"), "foo 1").expect("failed to write versions");
 
-        let versions = find_versions(workdir.as_ref(), "v").expect("failed to find versions");
-        assert_eq!(
-            versions["foo"],
-            &[Version::SemVer(semver::VersionReq::parse("1").unwrap())]
-        );
+        let versions = Versions::find_any(workdir.as_ref(), "v").expect("failed to find versions");
+        assert_eq!(versions["foo"], &[Version::Version("1".to_owned())]);
     }
 
     #[test]
@@ -257,7 +257,7 @@ foo 2.1
         let workdir = tempfile::tempdir().expect("failed to create temp dir");
         let subdir = workdir.as_ref().join("foo/bar/baz");
         fs::create_dir_all(&subdir).expect("failed to create dirs");
-        let result = find_versions(subdir, "v");
+        let result = Versions::find_any(subdir, "v");
         assert!(matches!(result, Err(VersionsError::NoVersionsFound)));
     }
 
@@ -265,8 +265,7 @@ foo 2.1
     fn no_dir() {
         let workdir = tempfile::tempdir().expect("failed to create temp dir");
         let subdir = workdir.as_ref().join("foo/bar/baz");
-        let result = find_versions(subdir, "v");
-        dbg!(&result);
+        let result = Versions::find_any(subdir, "v");
         assert!(matches!(result, Err(VersionsError::InvalidWorkdir)));
     }
 
@@ -277,10 +276,7 @@ foo 2.1
         fs::create_dir_all(&subdir).expect("failed to create dirs");
         fs::write(workdir.as_ref().join("v"), "foo 1").expect("failed to write versions");
 
-        let versions = find_versions(subdir, "v").expect("failed to find versions");
-        assert_eq!(
-            versions["foo"],
-            &[Version::SemVer(semver::VersionReq::parse("1").unwrap())]
-        );
+        let versions = Versions::find_any(subdir, "v").expect("failed to find versions");
+        assert_eq!(versions["foo"], &[Version::Version("1".to_owned())]);
     }
 }

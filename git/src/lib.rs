@@ -7,7 +7,7 @@ pub enum GitError {
     #[error("io error while running git command")]
     Io(#[from] std::io::Error),
 
-    #[error("git command returned an error: {0}")]
+    #[error("git command returned an error:\n{0}")]
     Command(String),
 
     #[error("failed to read command output")]
@@ -126,7 +126,6 @@ fn run<P: AsRef<Path>>(cmd: &str, dir: P, args: &[&str]) -> Result<String, GitEr
         .run()?;
 
     let output_str = String::from_utf8(output.stdout)?;
-
     if !output.status.success() {
         return Err(GitError::Command(output_str));
     }

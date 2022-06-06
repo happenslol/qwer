@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-semver = "1.0.9"
 thiserror = "1.0.31"
+duct = "0.13.5"
 
 [dev-dependencies]
 tempfile = "3.3.0"

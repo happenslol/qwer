@@ -1,10 +1,13 @@
 use std::{collections::HashMap, fs, path::PathBuf};
 
-use anyhow::{anyhow, bail, Result};
-use clap::{Args, Parser, Subcommand};
-use qwer::Shell;
+use anyhow::{anyhow, Result};
+use clap::{Parser, Subcommand};
+use qwer::{scripts::PluginScripts, Shell};
 
+mod install;
+mod list;
 mod plugin;
+mod version;
 
 #[derive(Debug, Parser)]
 #[clap(author, version, about)]
@@ -15,34 +18,64 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    Hook(Hook),
-    Export(Export),
+    Hook {
+        #[clap(subcommand)]
+        shell: ShellOptions,
+    },
 
-    Plugin(Plugin),
-}
+    Export {
+        #[clap(subcommand)]
+        shell: ShellOptions,
+    },
 
-#[derive(Debug, Args)]
-struct Hook {
-    #[clap(subcommand)]
-    shell: ShellOptions,
-}
+    Plugin {
+        #[clap(subcommand)]
+        command: PluginCommand,
+    },
 
-#[derive(Debug, Args)]
-struct Export {
-    #[clap(subcommand)]
-    shell: ShellOptions,
+    Install {
+        name: Option<String>,
+        version: Option<String>,
+    },
+
+    Uninstall {
+        name: String,
+        version: String,
+    },
+
+    Latest {
+        name: String,
+        filter: Option<String>,
+    },
+
+    List {
+        #[clap(subcommand)]
+        command: Option<ListCommand>,
+
+        name: Option<String>,
+        filter: Option<String>,
+    },
+
+    Global {
+        name: String,
+        version: Vec<String>,
+    },
+
+    Local {
+        name: String,
+        version: Vec<String>,
+    },
+
+    Shell {
+        name: String,
+        version: Vec<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
 enum ShellOptions {
     Bash,
     Zsh,
-}
-
-#[derive(Debug, Args)]
-struct Plugin {
-    #[clap(subcommand)]
-    command: PluginCommand,
 }
 
 #[derive(Debug, Subcommand)]
@@ -68,17 +101,30 @@ enum PluginCommand {
     },
 
     Update {
+        #[clap(subcommand)]
+        command: Option<PluginUpdateCommand>,
+
         name: Option<String>,
         git_ref: Option<String>,
-
-        #[clap(short, long)]
-        all: bool,
     },
 }
 
 #[derive(Debug, Subcommand)]
 enum PluginListCommand {
     All,
+}
+
+#[derive(Debug, Subcommand)]
+enum PluginUpdateCommand {
+    All,
+}
+
+#[derive(Debug, Subcommand)]
+enum ListCommand {
+    All {
+        name: String,
+        filter: Option<String>,
+    },
 }
 
 impl ShellOptions {
@@ -104,62 +150,103 @@ impl ShellOptions {
     }
 }
 
+pub const REGISTRIES_DIR: &str = "registries";
+pub const PLUGINS_DIR: &str = "plugins";
+pub const INSTALLS_DIR: &str = "installs";
+pub const DOWNLOADS_DIR: &str = "downloads";
+
+pub const TOOL_VERSIONS: &str = ".tool-versions";
+
+const DATA_DIR: &str = "qwer";
+
 fn main() -> Result<()> {
     match Cli::parse().command {
-        Commands::Hook(hook) => command_hook(hook.shell),
-        Commands::Export(export) => command_export(export.shell),
-        Commands::Plugin(plugin) => command_plugin(plugin.command),
+        Commands::Hook { shell } => {
+            let self_path = std::env::args()
+                .next()
+                .expect("Failed to get executable path");
+
+            let shell_name = shell.name();
+            let hook_cmd = format!("\"{self_path}\" export {shell_name}");
+            let hook = shell.hook(&hook_cmd, "qwer_hook");
+            print!("{hook}");
+
+            Ok(())
+        }
+        Commands::Export { shell } => {
+            let env = qwer::Env {
+                path: vec![],
+                vars: HashMap::from([("foo", "bar")]),
+            };
+
+            let export = shell.export(&env);
+            print!("{export}");
+
+            Ok(())
+        }
+        Commands::Plugin { command } => match command {
+            PluginCommand::Add { name, git_url } => plugin::add(name, git_url),
+            PluginCommand::List {
+                command,
+                urls,
+                refs,
+            } => match command {
+                Some(PluginListCommand::All) => plugin::list_all(),
+                None => plugin::list(urls, refs),
+            },
+            PluginCommand::Remove { name } => plugin::remove(name),
+            PluginCommand::Update {
+                command,
+                name,
+                git_ref,
+            } => match (command, name) {
+                (Some(PluginUpdateCommand::All), ..) => plugin::update_all(),
+                (None, Some(name)) => plugin::update(name, git_ref),
+                _ => unreachable!(),
+            },
+        },
+        Commands::Install { name, version } => match (name, version) {
+            (None, None) => install::install_all_local(),
+            (Some(name), None) => install::install_one_local(name),
+            (Some(name), Some(version)) => install::install_one_version(name, version),
+            _ => unreachable!(),
+        },
+        Commands::Uninstall { name, version } => install::uninstall(name, version),
+        Commands::Latest { name, filter } => list::latest(name, filter),
+        Commands::List {
+            command,
+            name,
+            filter,
+        } => match (command, name) {
+            (Some(ListCommand::All { name, filter }), None) => list::all(name, filter),
+            (None, Some(name)) => list::installed(name, filter),
+            _ => unreachable!(),
+        },
+        Commands::Global { name, version } => version::global(name, version),
+        Commands::Local { name, version } => version::local(name, version),
+        Commands::Shell { name, version } => version::shell(name, version),
     }
 }
 
 pub fn get_data_dir() -> Result<PathBuf> {
     let data_dir = dirs::data_dir().ok_or_else(|| anyhow!("failed to get data dir"))?;
-    let qwer_data_dir = data_dir.join("qwer");
+    let qwer_data_dir = data_dir.join(DATA_DIR);
     fs::create_dir_all(&qwer_data_dir)?;
     Ok(qwer_data_dir)
 }
 
-fn command_hook(shell: ShellOptions) -> Result<()> {
-    let self_path = std::env::args()
-        .next()
-        .expect("Failed to get executable path");
-
-    let shell_name = shell.name();
-    let hook_cmd = format!("\"{self_path}\" export {shell_name}");
-    let hook = shell.hook(&hook_cmd, "qwer_hook");
-    print!("{hook}");
-
-    Ok(())
+pub fn get_dir(dir: &str) -> Result<PathBuf> {
+    let data_dir = get_data_dir()?;
+    let subdir = data_dir.join(dir);
+    fs::create_dir_all(&subdir)?;
+    Ok(subdir)
 }
 
-fn command_export(shell: ShellOptions) -> Result<()> {
-    let env = qwer::Env {
-        path: vec![],
-        vars: HashMap::from([("foo", "bar")]),
-    };
-
-    let export = shell.export(&env);
-    print!("{export}");
-
-    Ok(())
-}
-
-fn command_plugin(plugin: PluginCommand) -> Result<()> {
-    match plugin {
-        PluginCommand::Add { name, git_url } => plugin::add(name, git_url),
-        PluginCommand::List {
-            command,
-            urls,
-            refs,
-        } => match command {
-            Some(PluginListCommand::All) => plugin::list_all(),
-            None => plugin::list(urls, refs),
-        },
-        PluginCommand::Remove { name } => plugin::remove(name),
-        PluginCommand::Update { name, git_ref, all } => match (name, all) {
-            (Some(name), false) => plugin::update(name, git_ref),
-            (None, true) => plugin::update_all(),
-            _ => bail!("plugin name or --all must be given"),
-        },
-    }
+pub fn get_plugin_scripts(name: &str) -> Result<PluginScripts> {
+    Ok(PluginScripts::new(
+        &name,
+        &get_dir(PLUGINS_DIR)?,
+        &get_dir(INSTALLS_DIR)?,
+        &get_dir(DOWNLOADS_DIR)?,
+    )?)
 }
