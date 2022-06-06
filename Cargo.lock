@@ -265,6 +265,7 @@ dependencies = [
 name = "qwer"
 version = "0.1.0"
 dependencies = [
+ "duct",
  "tempfile",
  "thiserror",
 ]

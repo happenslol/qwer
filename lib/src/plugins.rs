@@ -45,8 +45,7 @@ mod tests {
         let plugins = workdir.path().join("plugins");
         fs::create_dir_all(&plugins).expect("failed to create plugins dir");
 
-        fs::write(plugins.join("foo"), "repository = bar")
-            .expect("failed to write plugin file");
+        fs::write(plugins.join("foo"), "repository = bar").expect("failed to write plugin file");
 
         let result = parse_short_repo_url(&workdir, "foo").expect("failed to parse");
         assert_eq!(result, "bar");
@@ -58,8 +57,7 @@ mod tests {
         let plugins = workdir.path().join("plugins");
         fs::create_dir_all(&plugins).expect("failed to create plugins dir");
 
-        fs::write(plugins.join("foo"), "repository = bar")
-            .expect("failed to write plugin file");
+        fs::write(plugins.join("foo"), "repository = bar").expect("failed to write plugin file");
 
         let result = parse_short_repo_url(&workdir, "bar");
         assert!(matches!(result, Err(ShortPluginError::NotFound(_))));
@@ -71,8 +69,7 @@ mod tests {
         let plugins = workdir.path().join("plugins");
         fs::create_dir_all(&plugins).expect("failed to create plugins dir");
 
-        fs::write(plugins.join("foo"), "invalid format")
-            .expect("failed to write plugin file");
+        fs::write(plugins.join("foo"), "invalid format").expect("failed to write plugin file");
 
         let result = parse_short_repo_url(&workdir, "foo");
         dbg!(&result);

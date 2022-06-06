@@ -1,16 +1,11 @@
-use std::{
-    collections::HashMap,
-    fs,
-    path::PathBuf,
-};
+use std::{collections::HashMap, fs, path::PathBuf};
 
-use anyhow::{anyhow, bail, Result};
-use clap::{Args, Parser, Subcommand};
+use anyhow::{anyhow, Result};
+use clap::{Parser, Subcommand};
 use qwer::Shell;
 
 mod install;
 mod plugin;
-mod scripts;
 
 #[derive(Debug, Parser)]
 #[clap(author, version, about)]
@@ -21,39 +16,64 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    Hook(Hook),
-    Export(Export),
+    Hook {
+        #[clap(subcommand)]
+        shell: ShellOptions,
+    },
 
-    Plugin(Plugin),
+    Export {
+        #[clap(subcommand)]
+        shell: ShellOptions,
+    },
+
+    Plugin {
+        #[clap(subcommand)]
+        command: PluginCommand,
+    },
 
     Install {
         name: Option<String>,
         version: Option<String>,
     },
-}
 
-#[derive(Debug, Args)]
-struct Hook {
-    #[clap(subcommand)]
-    shell: ShellOptions,
-}
+    Uninstall {
+        name: String,
+        version: String,
+    },
 
-#[derive(Debug, Args)]
-struct Export {
-    #[clap(subcommand)]
-    shell: ShellOptions,
+    Latest {
+        name: String,
+        version: Option<String>,
+    },
+
+    List {
+        #[clap(subcommand)]
+        command: Option<ListCommand>,
+
+        name: Option<String>,
+        version: Option<String>,
+    },
+
+    Global {
+        name: String,
+        version: Vec<String>,
+    },
+
+    Local {
+        name: String,
+        version: Vec<String>,
+    },
+
+    Shell {
+        name: String,
+        version: Vec<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
 enum ShellOptions {
     Bash,
     Zsh,
-}
-
-#[derive(Debug, Args)]
-struct Plugin {
-    #[clap(subcommand)]
-    command: PluginCommand,
 }
 
 #[derive(Debug, Subcommand)]
@@ -79,16 +99,26 @@ enum PluginCommand {
     },
 
     Update {
+        #[clap(subcommand)]
+        command: Option<PluginUpdateCommand>,
+
         name: Option<String>,
         git_ref: Option<String>,
-
-        #[clap(short, long)]
-        all: bool,
     },
 }
 
 #[derive(Debug, Subcommand)]
 enum PluginListCommand {
+    All,
+}
+
+#[derive(Debug, Subcommand)]
+enum PluginUpdateCommand {
+    All,
+}
+
+#[derive(Debug, Subcommand)]
+enum ListCommand {
     All,
 }
 
@@ -117,10 +147,20 @@ impl ShellOptions {
 
 fn main() -> Result<()> {
     match Cli::parse().command {
-        Commands::Hook(hook) => command_hook(hook.shell),
-        Commands::Export(export) => command_export(export.shell),
-        Commands::Plugin(plugin) => command_plugin(plugin.command),
+        Commands::Hook { shell } => command_hook(shell),
+        Commands::Export { shell } => command_export(shell),
+        Commands::Plugin { command } => command_plugin(command),
         Commands::Install { name, version } => command_install(name, version),
+        Commands::Uninstall { name, version } => command_uninstall(name, version),
+        Commands::Latest { name, version } => todo!(),
+        Commands::List {
+            command,
+            name,
+            version,
+        } => todo!(),
+        Commands::Global { name, version } => todo!(),
+        Commands::Local { name, version } => todo!(),
+        Commands::Shell { name, version } => todo!(),
     }
 }
 
@@ -182,10 +222,14 @@ fn command_plugin(plugin: PluginCommand) -> Result<()> {
             None => plugin::list(urls, refs),
         },
         PluginCommand::Remove { name } => plugin::remove(name),
-        PluginCommand::Update { name, git_ref, all } => match (name, all) {
-            (Some(name), false) => plugin::update(name, git_ref),
-            (None, true) => plugin::update_all(),
-            _ => bail!("plugin name or --all must be given"),
+        PluginCommand::Update {
+            command,
+            name,
+            git_ref,
+        } => match (command, name) {
+            (Some(PluginUpdateCommand::All), ..) => plugin::update_all(),
+            (None, Some(name)) => plugin::update(name, git_ref),
+            _ => unreachable!(),
         },
     }
 }
@@ -197,4 +241,8 @@ fn command_install(name: Option<String>, version: Option<String>) -> Result<()> 
         (Some(name), Some(version)) => install::install_one_version(name, version),
         _ => unreachable!(),
     }
+}
+
+fn command_uninstall(name: String, version: String) -> Result<()> {
+    install::uninstall(name, version)
 }

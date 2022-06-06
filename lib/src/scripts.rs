@@ -4,16 +4,33 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{bail, Result};
-use git::GitRepo;
-use qwer::versions::Version;
+use thiserror::Error;
+
+use crate::versions::Version;
+
+#[derive(Error, Debug)]
+pub enum PluginScriptError {
+    #[error("script returned a non-0 exit code: {0}")]
+    ScriptFailed(String),
+
+    #[error("script `{0}` was not found")]
+    ScriptNotFound(String),
+
+    #[error("io error while running script")]
+    Io(#[from] std::io::Error),
+
+    #[error("failed to read command output")]
+    InvalidOutput(#[from] std::string::FromUtf8Error),
+
+    #[error("version `{0}` for plugin `{1}` was not installed")]
+    VersionNotInstalled(String, String),
+}
 
 pub struct PluginScripts {
     name: String,
     plugin_dir: PathBuf,
     install_dir: PathBuf,
     download_dir: PathBuf,
-    repo: GitRepo,
 }
 
 impl PluginScripts {
@@ -22,7 +39,7 @@ impl PluginScripts {
         plugins: Plugin,
         installs: Install,
         downloads: Download,
-    ) -> Result<Self>
+    ) -> Result<Self, PluginScriptError>
     where
         Plugin: AsRef<Path>,
         Install: AsRef<Path>,
@@ -33,18 +50,19 @@ impl PluginScripts {
         let download_dir = downloads.as_ref().join(name);
         let name = name.to_owned();
 
-        let repo = GitRepo::new(&plugin_dir)?;
-
         Ok(Self {
             name,
             plugin_dir,
             install_dir,
             download_dir,
-            repo,
         })
     }
 
-    fn run_script<P: AsRef<Path>>(&self, script: P, env: &[(&str, &str)]) -> Result<String> {
+    fn run_script<P: AsRef<Path>>(
+        &self,
+        script: P,
+        env: &[(&str, &str)],
+    ) -> Result<String, PluginScriptError> {
         let mut expr = duct::cmd!(&*script.as_ref().to_string_lossy())
             .stderr_to_stdout()
             .stdout_capture()
@@ -58,7 +76,7 @@ impl PluginScripts {
 
         let output_str = String::from_utf8(output.stdout)?;
         if !output.status.success() {
-            bail!("{output_str}");
+            return Err(PluginScriptError::ScriptFailed(output_str));
         }
 
         Ok(output_str)
@@ -66,7 +84,7 @@ impl PluginScripts {
 
     // Basic functionality
 
-    pub fn list_all(&self) -> Result<Vec<String>> {
+    pub fn list_all(&self) -> Result<Vec<String>, PluginScriptError> {
         Ok(self
             .run_script("bin/list-all", &[])?
             .trim()
@@ -75,7 +93,7 @@ impl PluginScripts {
             .collect())
     }
 
-    pub fn download(&self, version: &Version) -> Result<String> {
+    pub fn download(&self, version: &Version) -> Result<String, PluginScriptError> {
         if version == &Version::System {
             return Ok(String::new());
         }
@@ -105,14 +123,16 @@ impl PluginScripts {
         Ok(output)
     }
 
-    pub fn install(&self, version: &Version) -> Result<String> {
+    pub fn install(&self, version: &Version) -> Result<String, PluginScriptError> {
         if version == &Version::System {
             return Ok(String::new());
         }
 
         let install_script = self.plugin_dir.join("bin/install");
         if !install_script.is_file() {
-            bail!("install script for `{}` not found", &self.name);
+            return Err(PluginScriptError::ScriptNotFound(
+                install_script.to_string_lossy().to_string(),
+            ));
         }
 
         // TODO: Escape refs and paths correctly
@@ -141,7 +161,7 @@ impl PluginScripts {
         Ok(output)
     }
 
-    pub fn uninstall(&self, version: &Version) -> Result<String> {
+    pub fn uninstall(&self, version: &Version) -> Result<String, PluginScriptError> {
         if version == &Version::System {
             return Ok(String::new());
         }
@@ -150,11 +170,10 @@ impl PluginScripts {
         let version_install_dir = self.install_dir.join(version_str);
 
         if !version_install_dir.is_dir() {
-            bail!(
-                "version `{}` is not installed for plugin `{}`",
-                version_str,
-                self.name
-            );
+            return Err(PluginScriptError::VersionNotInstalled(
+                self.name.clone(),
+                version.raw(),
+            ));
         }
 
         let uninstall_script = self.plugin_dir.join("bin/uninstall");
@@ -177,28 +196,32 @@ impl PluginScripts {
 
     // Help strings
 
-    pub fn help_overview(&self, version: Option<&Version>) -> Result<String> {
+    pub fn help_overview(&self, version: Option<&Version>) -> Result<String, PluginScriptError> {
         self.get_help_str("overview", version)
     }
 
-    pub fn help_deps(&self, version: Option<&Version>) -> Result<String> {
+    pub fn help_deps(&self, version: Option<&Version>) -> Result<String, PluginScriptError> {
         self.get_help_str("deps", version)
     }
 
-    pub fn help_config(&self, version: Option<&Version>) -> Result<String> {
+    pub fn help_config(&self, version: Option<&Version>) -> Result<String, PluginScriptError> {
         self.get_help_str("config", version)
     }
 
-    pub fn help_links(&self, version: Option<&Version>) -> Result<String> {
+    pub fn help_links(&self, version: Option<&Version>) -> Result<String, PluginScriptError> {
         self.get_help_str("links", version)
     }
 
-    fn get_help_str(&self, which: &str, version: Option<&Version>) -> Result<String> {
+    fn get_help_str(
+        &self,
+        which: &str,
+        version: Option<&Version>,
+    ) -> Result<String, PluginScriptError> {
         let script_name = format!("help.{which}");
         let help_path = self.plugin_dir.join(&script_name);
 
         if !help_path.is_file() {
-            bail!("plugin `{}` has no `{}` script", &self.name, &script_name);
+            return Err(PluginScriptError::ScriptNotFound(script_name));
         }
 
         let mut env = vec![];
@@ -214,43 +237,43 @@ impl PluginScripts {
 
     // Latest resolution
 
-    pub fn latest_stable(&self) -> Result<&Version> {
-        bail!("")
+    pub fn latest_stable(&self) -> Result<&Version, PluginScriptError> {
+        todo!()
     }
 
     // Paths
 
-    pub fn list_bin_paths(&self) -> Result<Vec<String>> {
+    pub fn list_bin_paths(&self) -> Result<Vec<String>, PluginScriptError> {
         Ok(Vec::new())
     }
 
     // Env modification
 
-    pub fn exec_env(&self) -> Result<HashMap<String, String>> {
+    pub fn exec_env(&self) -> Result<HashMap<String, String>, PluginScriptError> {
         Ok(HashMap::new())
     }
 
-    pub fn exec_path(&self) -> Result<Vec<String>> {
+    pub fn exec_path(&self) -> Result<Vec<String>, PluginScriptError> {
         Ok(Vec::new())
     }
 
     // Hooks
 
-    pub fn post_plugin_add(&self) -> Result<()> {
+    pub fn post_plugin_add(&self) -> Result<(), PluginScriptError> {
         Ok(())
     }
 
-    pub fn post_plugin_update(&self) -> Result<()> {
+    pub fn post_plugin_update(&self) -> Result<(), PluginScriptError> {
         Ok(())
     }
 
-    pub fn pre_plugin_remove(&self) -> Result<()> {
+    pub fn pre_plugin_remove(&self) -> Result<(), PluginScriptError> {
         Ok(())
     }
 
     // Extensions
 
-    pub fn extension(&self, _ext: &str) -> Result<String> {
+    pub fn extension(&self, _ext: &str) -> Result<String, PluginScriptError> {
         Ok(String::new())
     }
 }
