@@ -143,11 +143,17 @@ impl Versions {
         Ok(result)
     }
 
-    /// Walk the directory tree upwards until a file with the given filename is found,
-    /// and parse it into a versions map. Convenience function that runs
-    /// `find_versions_file`, reads the found file to string and then runs `parse_versions`
-    /// on it.
+    /// Find a file in the local directory and parse it into a versions map.
+    /// and parse it into a versions map.
     pub fn find<P: AsRef<Path>>(workdir: P, filename: &str) -> Result<Self, VersionsError> {
+        let versions_file_path = find_versions_file(workdir, filename)?;
+        let versions_content = fs::read_to_string(versions_file_path)?;
+        Self::parse(&versions_content)
+    }
+
+    /// Walk the directory tree upwards until a file with the given filename is found,
+    /// and parse it into a versions map.
+    pub fn find_any<P: AsRef<Path>>(workdir: P, filename: &str) -> Result<Self, VersionsError> {
         let versions_file_path = find_versions_file(workdir, filename)?;
         let versions_content = fs::read_to_string(versions_file_path)?;
         Self::parse(&versions_content)
@@ -242,7 +248,7 @@ foo 2.1
         let workdir = tempfile::tempdir().expect("failed to create temp dir");
         fs::write(workdir.as_ref().join("v"), "foo 1").expect("failed to write versions");
 
-        let versions = Versions::find(workdir.as_ref(), "v").expect("failed to find versions");
+        let versions = Versions::find_any(workdir.as_ref(), "v").expect("failed to find versions");
         assert_eq!(versions["foo"], &[Version::Version("1".to_owned())]);
     }
 
@@ -251,7 +257,7 @@ foo 2.1
         let workdir = tempfile::tempdir().expect("failed to create temp dir");
         let subdir = workdir.as_ref().join("foo/bar/baz");
         fs::create_dir_all(&subdir).expect("failed to create dirs");
-        let result = Versions::find(subdir, "v");
+        let result = Versions::find_any(subdir, "v");
         assert!(matches!(result, Err(VersionsError::NoVersionsFound)));
     }
 
@@ -259,7 +265,7 @@ foo 2.1
     fn no_dir() {
         let workdir = tempfile::tempdir().expect("failed to create temp dir");
         let subdir = workdir.as_ref().join("foo/bar/baz");
-        let result = Versions::find(subdir, "v");
+        let result = Versions::find_any(subdir, "v");
         assert!(matches!(result, Err(VersionsError::InvalidWorkdir)));
     }
 
@@ -270,7 +276,7 @@ foo 2.1
         fs::create_dir_all(&subdir).expect("failed to create dirs");
         fs::write(workdir.as_ref().join("v"), "foo 1").expect("failed to write versions");
 
-        let versions = Versions::find(subdir, "v").expect("failed to find versions");
+        let versions = Versions::find_any(subdir, "v").expect("failed to find versions");
         assert_eq!(versions["foo"], &[Version::Version("1".to_owned())]);
     }
 }

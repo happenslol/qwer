@@ -10,7 +10,7 @@ use crate::versions::Version;
 
 #[derive(Error, Debug)]
 pub enum PluginScriptError {
-    #[error("script returned a non-0 exit code: {0}")]
+    #[error("script returned a non-0 exit code:\n{0}")]
     ScriptFailed(String),
 
     #[error("script `{0}` was not found")]
@@ -24,6 +24,9 @@ pub enum PluginScriptError {
 
     #[error("version `{0}` for plugin `{1}` was not installed")]
     VersionNotInstalled(String, String),
+
+    #[error("version `{0}` for plugin `{1}` was already installed")]
+    VersionAlreadyInstalled(String, String),
 }
 
 pub struct PluginScripts {
@@ -73,7 +76,6 @@ impl PluginScripts {
         }
 
         let output = expr.run()?;
-
         let output_str = String::from_utf8(output.stdout)?;
         if !output.status.success() {
             return Err(PluginScriptError::ScriptFailed(output_str));
@@ -120,16 +122,22 @@ impl PluginScripts {
         let version_str = version.version_str();
         let version_download_dir = self.download_dir.join(version_str);
         let version_install_dir = self.install_dir.join(version_str);
+        if version_install_dir.is_dir() {
+            return Err(PluginScriptError::VersionAlreadyInstalled(
+                self.name.clone(),
+                version.raw(),
+            ));
+        }
+
         fs::create_dir_all(&version_download_dir)?;
-        fs::create_dir_all(&version_install_dir)?;
 
         let output = self.run_script(
             &download_script,
             &[
                 ("ASDF_INSTALL_TYPE", version.install_type()),
                 ("ASDF_INSTALL_VERSION", version_str),
-                ("ASDF_INSTALL_PATH", &self.install_dir.to_string_lossy()),
-                ("ASDF_DOWNLOAD_PATH", &self.download_dir.to_string_lossy()),
+                ("ASDF_INSTALL_PATH", &version_install_dir.to_string_lossy()),
+                ("ASDF_DOWNLOAD_PATH", &version_download_dir.to_string_lossy()),
             ],
         )?;
 
@@ -148,6 +156,13 @@ impl PluginScripts {
         let version_str = version.version_str();
         let version_download_dir = self.download_dir.join(version.version_str());
         let version_install_dir = self.install_dir.join(version.version_str());
+        if version_install_dir.is_dir() {
+            return Err(PluginScriptError::VersionAlreadyInstalled(
+                self.name.clone(),
+                version.raw(),
+            ));
+        }
+
         fs::create_dir_all(&version_install_dir)?;
 
         let output = self.run_script(

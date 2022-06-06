@@ -14,10 +14,13 @@ pub fn install_one_local(_name: String) -> Result<()> {
 pub fn install_one_version(name: String, version: String) -> Result<()> {
     let scripts = get_plugin_scripts(&name)?;
     let version = Version::parse(&version);
-    let _download_output = scripts.download(&version)?;
-    let install_output = scripts.install(&version)?;
 
+    let download_output = scripts.download(&version)?;
+    println!("{download_output}");
+
+    let install_output = scripts.install(&version)?;
     println!("{install_output}");
+
     Ok(())
 }
 
