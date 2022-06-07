@@ -6,3 +6,5 @@ edition = "2021"
 [dependencies]
 duct = "0.13.5"
 thiserror = "1.0.31"
+log = "0.4.17"
+console = "0.15.0"

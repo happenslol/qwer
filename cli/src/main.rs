@@ -153,6 +153,8 @@ impl ShellOptions {
 }
 
 fn main() -> Result<()> {
+    env_logger::builder().format_timestamp(None).init();
+
     match Cli::parse().command {
         Commands::Hook { shell } => {
             let self_path = std::env::args()
