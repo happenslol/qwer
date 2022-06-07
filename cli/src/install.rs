@@ -5,12 +5,12 @@ use crate::dirs::{get_plugin_scripts, TOOL_VERSIONS};
 
 pub fn install_all_local() -> Result<()> {
     let _versions = Versions::find(std::env::current_dir()?, TOOL_VERSIONS)?;
-    Ok(())
+    todo!()
 }
 
 pub fn install_one_local(_name: String) -> Result<()> {
     let _versions = Versions::find(std::env::current_dir()?, TOOL_VERSIONS)?;
-    Ok(())
+    todo!()
 }
 
 pub fn install_one_version(name: String, version: String) -> Result<()> {
