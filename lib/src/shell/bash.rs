@@ -27,7 +27,14 @@ fi"#
             .collect::<Vec<String>>()
             .join("");
 
-        format!("export PATH=$PATH:{path};{vars}")
+        let runs = env
+            .run
+            .iter()
+            .map(|cmd| format!("{cmd};"))
+            .collect::<Vec<String>>()
+            .join("");
+
+        format!("export PATH=$PATH:{path};{vars}{runs}")
     }
 }
 
@@ -44,6 +51,7 @@ mod tests {
         assert!(result.contains("export PATH=$PATH:foo:bar;"));
         assert!(result.contains("export foo=bar;"));
         assert!(result.contains("export baz=foo;"));
+        assert!(result.contains("echo foo;"));
     }
 
     #[test]

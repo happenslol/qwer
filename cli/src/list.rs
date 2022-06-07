@@ -2,7 +2,7 @@ use std::fs::{self, DirEntry};
 
 use anyhow::{bail, Result};
 
-use crate::{get_dir, get_plugin_scripts, INSTALLS_DIR};
+use crate::dirs::{get_dir, get_plugin_scripts, INSTALLS_DIR};
 
 pub fn installed(name: String, filter: Option<String>) -> Result<()> {
     let install_dir = get_dir(INSTALLS_DIR)?.join(&name);
