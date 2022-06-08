@@ -1,6 +1,7 @@
 use std::{fs, time::Duration};
 
 use anyhow::{bail, Result};
+use log::info;
 use qwer::plugins::parse_short_repo_url;
 use tabled::{object::Segment, Alignment, Modify, Table, Tabled};
 
@@ -13,7 +14,7 @@ fn update_registry(url: &str, name: &str, _force: bool) -> Result<()> {
     let registry_dir = get_dir(REGISTRIES_DIR)?.join(name);
 
     if !registry_dir.is_dir() {
-        println!("initializing registry `{name}`...");
+        info!("Initializing registry `{name}`...");
         let registries_dir = get_dir(REGISTRIES_DIR)?;
         git::GitRepo::clone(&registries_dir, url, name, None)?;
     } else {

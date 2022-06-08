@@ -4,6 +4,7 @@ use std::{
     ops::Deref,
     path::{Path, PathBuf},
 };
+use log::trace;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -50,6 +51,8 @@ impl Version {
     /// assert_eq!(Version::parse("1"), Version::Version("1".to_owned()));
     /// ```
     pub fn parse(raw: &str) -> Self {
+        trace!("Parsing version string {raw}");
+
         if raw == "system" {
             return Version::System;
         }
@@ -110,6 +113,8 @@ impl Versions {
     /// assert_eq!(versions["nodejs"], &[Version::Version("16.0".to_owned())]);
     /// ```
     pub fn parse(content: &str) -> Result<Self, VersionsError> {
+        trace!("Parsing versions:\n{content}");
+
         let lines = content
             .split('\n')
             .map(|line| line.trim())
@@ -146,7 +151,8 @@ impl Versions {
     /// Find a file in the local directory and parse it into a versions map.
     /// and parse it into a versions map.
     pub fn find<P: AsRef<Path>>(workdir: P, filename: &str) -> Result<Self, VersionsError> {
-        let versions_file_path = find_versions_file(workdir, filename)?;
+        let versions_file_path = workdir.as_ref().join(filename);
+        trace!("Looking for versions file at `{:?}`", versions_file_path);
         let versions_content = fs::read_to_string(versions_file_path)?;
         Self::parse(&versions_content)
     }
@@ -178,6 +184,8 @@ fn find_versions_file<P: AsRef<Path>>(
     }
 
     loop {
+        trace!("Looking for versions file in {:?}", current_dir);
+
         let files = fs::read_dir(&current_dir)?;
         for file in files {
             let file = file?;

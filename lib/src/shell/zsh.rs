@@ -1,10 +1,12 @@
+use log::trace;
+
 use crate::{Env, Shell};
 
 pub struct Zsh;
 
 impl Shell for Zsh {
     fn hook(cmd: &str, hook_fn: &str) -> String {
-        format!(
+        let result = format!(
             r#"_{hook_fn}() {{
   trap -- '' SIGINT;
   eval "$({cmd})";
@@ -18,10 +20,16 @@ typeset -ag chpwd_functions;
 if [[ -z "${{chpwd_functions[(r)_{hook_fn}]+1}}" ]]; then
   chpwd_functions=( _{hook_fn} ${{chpwd_functions[@]}} )
 fi"#
-        )
+        );
+
+        trace!("inserting hook function into zsh:\n{result}");
+
+        result
     }
 
     fn export(env: &Env) -> String {
+        trace!("exporting zsh env:\n{env:#?}");
+
         let path = env.path.join(":");
         let vars = env
             .vars
@@ -42,7 +50,6 @@ fi"#
         } else {
             format!("{vars}{runs}")
         }
-
     }
 }
 

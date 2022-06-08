@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use console::style;
+use log::{info, trace};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -30,6 +32,7 @@ impl GitRepo {
             return Err(GitError::NotAGitDirectory(git_dir));
         }
 
+        trace!("Initialized git repo at {:?}", work_tree);
         Ok(Self { git_dir, work_tree })
     }
 
@@ -39,11 +42,19 @@ impl GitRepo {
         name: &str,
         branch: Option<&str>,
     ) -> Result<Self, GitError> {
+        trace!(
+            "Cloning repo `{}@{:?}` into {:?}",
+            url,
+            branch,
+            dir.as_ref()
+        );
+
         let mut args = vec!["clone", url, name];
         if let Some(branch) = branch {
             args.push(branch);
         }
 
+        info!("Cloning {url}");
         run("git", &dir, &args)?;
         let work_tree = dir.as_ref().join(name);
         let git_dir = work_tree.join(".git");
@@ -61,7 +72,15 @@ impl GitRepo {
         ]
         .concat();
 
-        Ok(run("git", &self.git_dir, args_with_dirs)?.trim().to_owned())
+        if log::log_enabled!(log::Level::Trace) {
+            let args_str = args_with_dirs.join(" ");
+            trace!("Running git command `{args_str}`");
+        }
+
+        let output = run("git", &self.git_dir, args_with_dirs)?.trim().to_owned();
+        trace!("git command output:\n{output}");
+
+        Ok(output)
     }
 
     fn find_remote_default_branch(&self) -> Result<String, GitError> {
@@ -73,10 +92,14 @@ impl GitRepo {
             .trim()
             .to_owned();
 
+        trace!("parsed remote default branch as `{result}`");
+
         Ok(result)
     }
 
     fn force_checkout(&self, rref: &str) -> Result<(), GitError> {
+        info!("Checking out {}", style(rref).blue());
+
         self.run(&[
             "-c",
             "advice.detachedHead=false",
@@ -106,10 +129,14 @@ impl GitRepo {
     }
 
     pub fn update_to_remote_head(&self) -> Result<(), GitError> {
+        info!("Updating to latest remote");
         let remote_default_branch = self.find_remote_default_branch()?;
+
+        trace!("Fetching from remote default branch `{remote_default_branch}`");
         let fetch_arg = format!("{remote_default_branch}:{remote_default_branch}");
         self.run(&["fetch", "--prune", "--update-head-ok", "origin", &fetch_arg])?;
 
+        trace!("Resetting to origin/{remote_default_branch}");
         let remote_ref = format!("origin/{remote_default_branch}");
         self.run(&["reset", "--hard", &remote_ref])?;
 

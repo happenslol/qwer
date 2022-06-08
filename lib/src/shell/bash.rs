@@ -1,10 +1,12 @@
+use log::trace;
+
 use crate::{Env, Shell};
 
 pub struct Bash;
 
 impl Shell for Bash {
     fn hook(cmd: &str, hook_fn: &str) -> String {
-        format!(
+        let result = format!(
             r#"_{hook_fn}() {{
   local previous_exit_status=$?;
   trap -- '' SIGINT;
@@ -15,10 +17,16 @@ impl Shell for Bash {
 if ! [[ "${{PROMPT_COMMAND:-}}" =~ _{hook_fn} ]]; then
   PROMPT_COMMAND="_{hook_fn}${{PROMPT_COMMAND:+;$PROMPT_COMMAND}}"
 fi"#
-        )
+        );
+
+        trace!("inserting hook function into bash:\n{result}");
+
+        result
     }
 
     fn export(env: &Env) -> String {
+        trace!("exporting bash env:\n{env:#?}");
+
         let path = env.path.join(":");
         let vars = env
             .vars
