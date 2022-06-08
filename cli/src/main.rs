@@ -1,5 +1,8 @@
+use std::io::Write;
+
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use console::{style, StyledObject};
 use qwer::Shell;
 
 use crate::env::get_current_env;
@@ -152,8 +155,33 @@ impl ShellOptions {
     }
 }
 
+fn format_log_level(level: &log::Level) -> StyledObject<&str> {
+    match level {
+        log::Level::Error => style("error").red(),
+        log::Level::Warn => style("warn"),
+        log::Level::Debug => style("debug"),
+        log::Level::Trace => style("trace"),
+        _ => unreachable!(),
+    }
+}
+
 fn main() -> Result<()> {
-    env_logger::builder().format_timestamp(None).init();
+    env_logger::Builder::from_env("QWER_LOG")
+        .target(env_logger::Target::Stderr)
+        .filter_level(log::LevelFilter::Info)
+        .format(|buf, record| {
+            if let log::Level::Info = record.level() {
+                writeln!(buf, "{}", record.args())
+            } else {
+                writeln!(
+                    buf,
+                    "{}: {}",
+                    format_log_level(&record.level()),
+                    record.args()
+                )
+            }
+        })
+        .init();
 
     match Cli::parse().command {
         Commands::Hook { shell } => {
