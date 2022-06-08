@@ -23,8 +23,7 @@ pub fn install_one_version(name: String, version: String) -> Result<()> {
             let latest = scripts.latest()?;
 
             info!(
-                "{} {} latest to {}",
-                style("Resolved").blue().bold(),
+                "Resolved {} latest to {}",
                 &name,
                 style(latest.raw()).bold()
             );
@@ -35,8 +34,7 @@ pub fn install_one_version(name: String, version: String) -> Result<()> {
             let latest_stable = scripts.latest_stable()?;
 
             info!(
-                "{} {} latest-stable to {}",
-                style("Resolved").blue().bold(),
+                "Resolved {} latest-stable to {}",
                 &name,
                 style(latest_stable.raw()).bold()
             );
@@ -50,29 +48,19 @@ pub fn install_one_version(name: String, version: String) -> Result<()> {
         bail!("can't install system version");
     }
 
-    info!(
-        "{} {} {}",
-        style("Installing").blue().bold(),
-        &name,
-        version.raw()
-    );
+    info!("Installing {} {}", &name, version.raw());
 
     if scripts.has_download() {
-        info!("{} download script...", style("Running").blue());
+        info!("Running download script...");
         let download_output = scripts.download(&version)?;
         trace!("Download output:\n{download_output}");
     }
 
-    info!("{} install script...", style("Running").blue().bold());
+    info!("Running install script...");
     let install_output = scripts.install(&version)?;
     trace!("Install output:\n{install_output}");
 
-    info!(
-        "{} {} {}",
-        style("Installed").green().bold(),
-        &name,
-        version.raw()
-    );
+    info!("Installed {} {}", &name, version.raw());
 
     Ok(())
 }
@@ -84,28 +72,18 @@ pub fn uninstall(name: String, version: String) -> Result<()> {
         bail!("version `{}` is not installed", version.version_str());
     }
 
-    info!(
-        "{} {} {}",
-        style("Uninstalling").blue().bold(),
-        &name,
-        version.raw()
-    );
+    info!("Uninstalling {} {}", &name, version.raw());
 
     if scripts.has_uninstall() {
-        info!("{} uninstall script...", style("Running").blue().bold(),);
+        info!("Running uninstall script...");
         let uninstall_output = scripts.uninstall(&version)?;
         trace!("Uninstall ouput:\n{uninstall_output}");
     } else {
-        info!("{} version directory...", style("Removing").blue().bold(),);
+        info!("Running version directory...");
         scripts.rm_version(&version)?;
     }
 
-    info!(
-        "{} {} {}",
-        style("Uninstalled").green().bold(),
-        &name,
-        version.raw()
-    );
+    info!("Uninstalled {} {}", &name, version.raw());
 
     Ok(())
 }
