@@ -394,15 +394,15 @@ impl PluginScripts {
     // Hooks
 
     pub fn post_plugin_add(&self) -> Result<(), PluginScriptError> {
-        Ok(())
+        todo!()
     }
 
     pub fn post_plugin_update(&self) -> Result<(), PluginScriptError> {
-        Ok(())
+        todo!()
     }
 
     pub fn pre_plugin_remove(&self) -> Result<(), PluginScriptError> {
-        Ok(())
+        todo!()
     }
 
     // Extensions
