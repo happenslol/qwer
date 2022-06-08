@@ -3,6 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use log::trace;
 use thiserror::Error;
 
 use crate::versions::Version;
@@ -21,11 +22,11 @@ pub enum PluginScriptError {
     #[error("failed to read command output")]
     InvalidOutput(#[from] std::string::FromUtf8Error),
 
-    #[error("version `{0}` for plugin `{1}` was not installed")]
-    VersionNotInstalled(String, String),
+    #[error("version `{version}` for plugin `{plugin}` was not installed")]
+    VersionNotInstalled { version: String, plugin: String },
 
-    #[error("version `{0}` for plugin `{1}` was already installed")]
-    VersionAlreadyInstalled(String, String),
+    #[error("version `{version}` for plugin `{plugin}` was already installed")]
+    VersionAlreadyInstalled { version: String, plugin: String },
 }
 
 pub struct PluginScripts {
@@ -65,10 +66,18 @@ impl PluginScripts {
         script: P,
         env: &[(&str, &str)],
     ) -> Result<String, PluginScriptError> {
+        if log::log_enabled!(log::Level::Trace) {
+            let script_path = script.as_ref();
+            let contents = fs::read_to_string(&script_path).unwrap_or("".to_owned());
+            trace!("Running script `{script_path:?}` with content: \n{contents}");
+        }
+
         let mut expr = duct::cmd!(script.as_ref())
             .stderr_to_stdout()
             .stdout_capture()
             .unchecked();
+
+        trace!("Setting env for script:\n{env:#?}");
 
         for (key, val) in env {
             expr = expr.env(key, val);
@@ -76,6 +85,8 @@ impl PluginScripts {
 
         let output = expr.run()?;
         let output_str = String::from_utf8(output.stdout)?;
+        trace!("Got script output:\n{output_str}");
+
         if !output.status.success() {
             return Err(PluginScriptError::ScriptFailed(output_str));
         }
@@ -84,6 +95,10 @@ impl PluginScripts {
     }
 
     fn assert_script_exists<P: AsRef<Path>>(&self, script: P) -> Result<(), PluginScriptError> {
+        if log::log_enabled!(log::Level::Trace) {
+            trace!("Asserting script `{:?}` exists", script.as_ref());
+        }
+
         if !script.as_ref().is_file() {
             return Err(PluginScriptError::ScriptNotFound(
                 script.as_ref().to_string_lossy().to_string(),
@@ -122,10 +137,10 @@ impl PluginScripts {
         let version_download_dir = self.download_dir.join(version_str);
         let version_install_dir = self.install_dir.join(version_str);
         if version_install_dir.is_dir() {
-            return Err(PluginScriptError::VersionAlreadyInstalled(
-                self.name.clone(),
-                version.raw(),
-            ));
+            return Err(PluginScriptError::VersionAlreadyInstalled {
+                plugin: self.name.clone(),
+                version: version.raw(),
+            });
         }
 
         fs::create_dir_all(&version_download_dir)?;
@@ -147,6 +162,12 @@ impl PluginScripts {
     }
 
     pub fn install(&self, version: &Version) -> Result<String, PluginScriptError> {
+        trace!(
+            "Installing version {version:?} for plugin `{:?}` to `{:?}`",
+            self.plugin_dir,
+            self.install_dir,
+        );
+
         if version == &Version::System {
             return Ok(String::new());
         }
@@ -159,10 +180,10 @@ impl PluginScripts {
         let version_download_dir = self.download_dir.join(version.version_str());
         let version_install_dir = self.install_dir.join(version.version_str());
         if version_install_dir.is_dir() {
-            return Err(PluginScriptError::VersionAlreadyInstalled(
-                self.name.clone(),
-                version.raw(),
-            ));
+            return Err(PluginScriptError::VersionAlreadyInstalled {
+                plugin: self.name.clone(),
+                version: version.raw(),
+            });
         }
 
         fs::create_dir_all(&version_install_dir)?;
@@ -188,6 +209,12 @@ impl PluginScripts {
     }
 
     pub fn uninstall(&self, version: &Version) -> Result<String, PluginScriptError> {
+        trace!(
+            "Uninstalling version {version:?} for plugin `{:?}` from `{:?}`",
+            self.plugin_dir,
+            self.install_dir,
+        );
+
         if version == &Version::System {
             return Ok(String::new());
         }
@@ -196,10 +223,10 @@ impl PluginScripts {
         let version_install_dir = self.install_dir.join(version_str);
 
         if !version_install_dir.is_dir() {
-            return Err(PluginScriptError::VersionNotInstalled(
-                self.name.clone(),
-                version.raw(),
-            ));
+            return Err(PluginScriptError::VersionNotInstalled {
+                plugin: self.name.clone(),
+                version: version.raw(),
+            });
         }
 
         let uninstall_script = self.plugin_dir.join("bin/uninstall");
@@ -307,7 +334,7 @@ impl PluginScripts {
 
     // Latest resolution
 
-    pub fn latest_stable(&self) -> Result<&Version, PluginScriptError> {
+    pub fn latest_stable(&self) -> Result<Version, PluginScriptError> {
         todo!()
     }
 

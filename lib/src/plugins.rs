@@ -1,5 +1,6 @@
 use std::{fs, path::Path};
 
+use log::trace;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -21,14 +22,19 @@ pub fn parse_short_repo_url<P: AsRef<Path>>(
     registry: P,
     plugin: &str,
 ) -> Result<String, ShortPluginError> {
-    let plugin_file = registry.as_ref().join("plugins").join(plugin);
+    let reg_path = registry.as_ref();
+    trace!("Parsing short plugin `{plugin}` from registry at `{reg_path:?}`");
+
+    let plugin_file = reg_path.join("plugins").join(plugin);
     if !plugin_file.is_file() {
+        trace!("Plugin file for `{plugin}` not found at `{plugin_file:?}`");
         return Err(ShortPluginError::NotFound(plugin.to_owned()));
     }
 
     let contents = fs::read_to_string(plugin_file)?;
     let parts = contents.split('=').collect::<Vec<&str>>();
     if parts.len() != 2 || parts[0].trim() != "repository" {
+        trace!("Failed to parse contents `{contents}` into plugin url");
         return Err(ShortPluginError::InvalidFile(contents));
     }
 

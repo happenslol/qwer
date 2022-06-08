@@ -72,8 +72,15 @@ impl GitRepo {
         ]
         .concat();
 
-        trace!("Running git command `{args_with_dirs:?}`");
-        Ok(run("git", &self.git_dir, args_with_dirs)?.trim().to_owned())
+        if log::log_enabled!(log::Level::Trace) {
+            let args_str = args_with_dirs.join(" ");
+            trace!("Running git command `{args_str}`");
+        }
+
+        let output = run("git", &self.git_dir, args_with_dirs)?.trim().to_owned();
+        trace!("git command output:\n{output}");
+
+        Ok(output)
     }
 
     fn find_remote_default_branch(&self) -> Result<String, GitError> {
@@ -84,6 +91,8 @@ impl GitRepo {
             .trim_end_matches("HEAD")
             .trim()
             .to_owned();
+
+        trace!("parsed remote default branch as `{result}`");
 
         Ok(result)
     }
