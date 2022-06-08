@@ -133,8 +133,8 @@ impl PluginScripts {
         self.install_dir.join(version.version_str()).is_dir()
     }
 
-    pub fn find_version(&self, version: String) -> Result<Version, PluginScriptError> {
-        let parsed = Version::parse(&version);
+    pub fn find_version(&self, version: &str) -> Result<Version, PluginScriptError> {
+        let parsed = Version::parse(version);
         match parsed {
             Version::Version(version_str) => {
                 let versions = self.list_all()?;

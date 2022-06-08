@@ -1,10 +1,10 @@
+use log::trace;
 use std::{
     collections::HashMap,
     fs, io,
     ops::Deref,
     path::{Path, PathBuf},
 };
-use log::trace;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -164,6 +164,24 @@ impl Versions {
         let versions_content = fs::read_to_string(versions_file_path)?;
         Self::parse(&versions_content)
     }
+
+    /// Continually walk the directory tree upwards and find all version files, parsing
+    /// all of them into version maps. The returned results will be in the order the
+    /// files were found in.
+    pub fn find_all<P: AsRef<Path>>(
+        workdir: P,
+        filename: &str,
+    ) -> Result<Vec<Self>, VersionsError> {
+        let versions_file_paths = find_all_versions_files(workdir, filename)?;
+
+        versions_file_paths
+            .iter()
+            .map(|path| fs::read_to_string(path))
+            .collect::<Result<Vec<_>, _>>()?
+            .iter()
+            .map(|content| Self::parse(&content))
+            .collect()
+    }
 }
 
 impl Deref for Versions {
@@ -172,6 +190,38 @@ impl Deref for Versions {
     fn deref(&self) -> &Self::Target {
         &self.0
     }
+}
+
+fn find_all_versions_files<P: AsRef<Path>>(
+    workdir: P,
+    filename: &str,
+) -> Result<Vec<PathBuf>, VersionsError> {
+    let mut current_dir = workdir.as_ref();
+    if !current_dir.is_dir() {
+        return Err(VersionsError::InvalidWorkdir);
+    }
+
+    let mut result = Vec::new();
+    loop {
+        trace!("Looking for versions file in {:?}", current_dir);
+
+        let files = fs::read_dir(&current_dir)?;
+        for file in files {
+            let file = file?;
+            if file.file_name() == filename {
+                result.push(file.path());
+            }
+        }
+
+        let next_dir = current_dir.parent();
+        if next_dir.is_none() {
+            break;
+        }
+
+        current_dir = next_dir.unwrap();
+    }
+
+    Ok(result)
 }
 
 fn find_versions_file<P: AsRef<Path>>(

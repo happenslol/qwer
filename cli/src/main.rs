@@ -226,8 +226,8 @@ fn main() -> Result<()> {
             },
         },
         Commands::Install { name, version } => match (name, version) {
-            (None, None) => install::install_all_local(),
-            (Some(name), None) => install::install_one_local(name),
+            (None, None) => install::install_all(),
+            (Some(name), None) => install::install_one(name),
             (Some(name), Some(version)) => install::install_one_version(name, version),
             _ => unreachable!(),
         },
