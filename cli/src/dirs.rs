@@ -1,6 +1,6 @@
 use std::{fs, path::PathBuf};
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use qwer::scripts::PluginScripts;
 
 pub const REGISTRIES_DIR: &str = "registries";
@@ -32,10 +32,16 @@ pub fn _get_global_tool_versions() -> Result<PathBuf> {
 }
 
 pub fn get_plugin_scripts(name: &str) -> Result<PluginScripts> {
-    Ok(PluginScripts::new(
+    let result = PluginScripts::new(
         &name,
         &get_dir(PLUGINS_DIR)?,
         &get_dir(INSTALLS_DIR)?,
         &get_dir(DOWNLOADS_DIR)?,
-    )?)
+    )?;
+
+    if !result.plugin_installed() {
+        bail!("plugin `{name}` is not installed");
+    }
+
+    Ok(result)
 }

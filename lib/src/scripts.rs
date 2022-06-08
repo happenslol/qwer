@@ -27,6 +27,9 @@ pub enum PluginScriptError {
 
     #[error("version `{version}` for plugin `{plugin}` was already installed")]
     VersionAlreadyInstalled { version: String, plugin: String },
+
+    #[error("no versions were found")]
+    NoVersionsFound,
 }
 
 pub struct PluginScripts {
@@ -122,6 +125,43 @@ impl PluginScripts {
             .collect())
     }
 
+    pub fn plugin_installed(&self) -> bool {
+        self.plugin_dir.is_dir()
+    }
+
+    pub fn version_installed(&self, version: &Version) -> bool {
+        self.install_dir.join(version.version_str()).is_dir()
+    }
+
+    pub fn find_version(&self, version: String) -> Result<Version, PluginScriptError> {
+        let parsed = Version::parse(&version);
+        match parsed {
+            Version::Version(version_str) => {
+                let versions = self.list_all()?;
+
+                versions
+                    .iter()
+                    .find(|raw| &version_str == *raw)
+                    .ok_or(PluginScriptError::NoVersionsFound)
+                    .map(|raw| Version::parse(raw))
+            }
+            _ => Ok(parsed),
+        }
+    }
+
+    pub fn latest(&self) -> Result<Version, PluginScriptError> {
+        let versions = self.list_all()?;
+
+        versions
+            .last()
+            .ok_or(PluginScriptError::NoVersionsFound)
+            .map(|raw| Version::parse(raw))
+    }
+
+    pub fn has_download(&self) -> bool {
+        self.plugin_dir.join("bin/download").is_file()
+    }
+
     pub fn download(&self, version: &Version) -> Result<String, PluginScriptError> {
         if version == &Version::System {
             return Ok(String::new());
@@ -206,6 +246,19 @@ impl PluginScripts {
         // TODO: Allow cleaning download dir
 
         Ok(output)
+    }
+
+    pub fn has_uninstall(&self) -> bool {
+        self.plugin_dir.join("bin/uninstall").is_file()
+    }
+
+    pub fn rm_version(&self, version: &Version) -> Result<(), PluginScriptError> {
+        let version_dir = self.install_dir.join(version.version_str());
+        if !version_dir.is_dir() {
+            return Ok(());
+        }
+
+        Ok(fs::remove_dir_all(&version_dir)?)
     }
 
     pub fn uninstall(&self, version: &Version) -> Result<String, PluginScriptError> {
