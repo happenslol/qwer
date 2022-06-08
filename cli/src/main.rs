@@ -239,6 +239,7 @@ fn main() -> Result<()> {
             filter,
         } => match (command, name) {
             (Some(ListCommand::All { name, filter }), None) => list::all(name, filter),
+            (None, None) => list::all_installed(),
             (None, Some(name)) => list::installed(name, filter),
             _ => unreachable!(),
         },

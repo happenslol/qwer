@@ -4,7 +4,47 @@ use anyhow::{bail, Result};
 
 use crate::dirs::{get_dir, get_plugin_scripts, INSTALLS_DIR};
 
+pub fn all_installed() -> Result<()> {
+    let install_dir = get_dir(INSTALLS_DIR)?;
+
+    let entries = fs::read_dir(&install_dir)?
+        .map(|entry| entry)
+        .collect::<Result<Vec<DirEntry>, std::io::Error>>()?
+        .iter()
+        .map(|entry| entry.file_name().to_string_lossy().to_string())
+        .collect::<Vec<_>>();
+
+    if entries.is_empty() {
+        println!("no tools installed");
+        return Ok(());
+    }
+
+    for plugin in entries {
+        let installed = get_installed_versions(&plugin, None)?;
+        if installed.is_empty() {
+            continue;
+        }
+
+        println!("{plugin}");
+        for version in installed {
+            println!("  {version}");
+        }
+        print!("\n");
+    }
+
+    Ok(())
+}
+
 pub fn installed(name: String, filter: Option<String>) -> Result<()> {
+    let installed = get_installed_versions(&name, filter)?;
+    for version in installed {
+        println!("{version}");
+    }
+
+    Ok(())
+}
+
+fn get_installed_versions(name: &str, filter: Option<String>) -> Result<Vec<String>> {
     let install_dir = get_dir(INSTALLS_DIR)?.join(&name);
     if !install_dir.is_dir() {
         bail!("no versions installed for `{name}`");
@@ -26,15 +66,11 @@ pub fn installed(name: String, filter: Option<String>) -> Result<()> {
         entries
     };
 
-    for version in filtered {
-        println!("{version}");
-    }
-
-    Ok(())
+    Ok(filtered)
 }
 
-fn get_filtered_versions(name: String, filter: Option<String>) -> Result<Vec<String>> {
-    let scripts = get_plugin_scripts(&name)?;
+fn get_available_versions(name: &str, filter: Option<String>) -> Result<Vec<String>> {
+    let scripts = get_plugin_scripts(name)?;
     let versions = scripts.list_all()?;
     let filtered = if let Some(filter) = filter {
         versions
@@ -49,7 +85,7 @@ fn get_filtered_versions(name: String, filter: Option<String>) -> Result<Vec<Str
 }
 
 pub fn all(name: String, filter: Option<String>) -> Result<()> {
-    let versions = get_filtered_versions(name, filter)?;
+    let versions = get_available_versions(&name, filter)?;
     if versions.is_empty() {
         bail!("no versions found");
     }
@@ -62,7 +98,7 @@ pub fn all(name: String, filter: Option<String>) -> Result<()> {
 }
 
 pub fn latest(name: String, filter: Option<String>) -> Result<()> {
-    let versions = get_filtered_versions(name, filter)?;
+    let versions = get_available_versions(&name, filter)?;
     if versions.is_empty() {
         bail!("no versions found");
     }
