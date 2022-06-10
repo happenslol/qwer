@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use anyhow::{bail, Result};
-use console::style;
 use log::{info, trace};
 use qwer::versions::{Version, Versions};
 
@@ -67,50 +66,26 @@ pub fn install_one_version(name: String, version: String) -> Result<()> {
 
 fn install(name: &str, version: &str) -> Result<()> {
     let scripts = get_plugin_scripts(&name)?;
+    let resolved = scripts.resolve(version)?;
+    info!("Resolved {} to {}", version, resolved.raw());
 
-    let version = match version {
-        "latest" => {
-            let latest = scripts.latest()?;
-
-            info!(
-                "Resolved {} latest to {}",
-                &name,
-                style(latest.raw()).bold()
-            );
-
-            latest
-        }
-        "latest-stable" => {
-            let latest_stable = scripts.latest_stable()?;
-
-            info!(
-                "Resolved {} latest-stable to {}",
-                &name,
-                style(latest_stable.raw()).bold()
-            );
-
-            latest_stable
-        }
-        _ => scripts.find_version(version)?,
-    };
-
-    if let Version::System = version {
+    if let Version::System = resolved {
         bail!("can't install system version");
     }
 
-    info!("Installing {} {}", &name, version.raw());
+    info!("Installing {} {}", &name, resolved.raw());
 
     if scripts.has_download() {
         info!("Running download script...");
-        let download_output = scripts.download(&version)?;
+        let download_output = scripts.download(&resolved)?;
         trace!("Download output:\n{download_output}");
     }
 
     info!("Running install script...");
-    let install_output = scripts.install(&version)?;
+    let install_output = scripts.install(&resolved)?;
     trace!("Install output:\n{install_output}");
 
-    info!("Installed {} {}", &name, version.raw());
+    info!("Installed {} {}", &name, resolved.raw());
 
     Ok(())
 }

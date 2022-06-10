@@ -11,7 +11,7 @@ fn use_version_for_dir(name: String, version: String, path: PathBuf) -> Result<(
         bail!("Plugin `{name}` is not installed");
     }
 
-    let version = Version::parse(&version);
+    let version = scripts.resolve(&version)?;
     if !scripts.version_installed(&version) {
         bail!(
             "Version `{}` is not installed for plugin `{}`",
@@ -42,6 +42,20 @@ pub fn local(name: String, version: String) -> Result<()> {
     use_version_for_dir(name, version, std::env::current_dir()?)
 }
 
-pub fn shell(_name: String, _version: String) -> Result<()> {
-    todo!()
+pub fn shell(name: String, version: String) -> Result<()> {
+    let scripts = get_plugin_scripts(&name)?;
+    if !scripts.plugin_installed() {
+        bail!("Plugin `{name}` is not installed");
+    }
+
+    let version = Version::parse(&version);
+    if !scripts.version_installed(&version) {
+        bail!(
+            "Version `{}` is not installed for plugin `{}`",
+            version.raw(),
+            &name
+        );
+    }
+
+    Ok(())
 }

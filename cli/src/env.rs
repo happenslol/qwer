@@ -44,14 +44,7 @@ pub fn get_current_env() -> Result<Option<Env>> {
 
         let scripts = get_plugin_scripts(&plugin)?;
         let version = found.unwrap();
-
-        // first, see if there's an exec-env
-        if let Some(exec_env_run) = scripts.exec_env(&version) {
-            env.run.push(exec_env_run);
-        }
-
-        // now, add the bin paths to our path
-        env.path.extend(scripts.list_bin_paths(&version)?);
+        env.merge(scripts.get_env(version)?);
     }
 
     Ok(Some(env))

@@ -6,7 +6,7 @@ use std::{
 use log::trace;
 use thiserror::Error;
 
-use crate::versions::Version;
+use crate::{versions::Version, Env};
 
 #[derive(Error, Debug)]
 pub enum PluginScriptError {
@@ -409,5 +409,29 @@ impl PluginScripts {
 
     pub fn extension(&self, _ext: &str) -> Result<String, PluginScriptError> {
         Ok(String::new())
+    }
+
+    // Helpers
+
+    pub fn get_env(&self, version: &Version) -> Result<Env, PluginScriptError> {
+        let mut env = Env::default();
+
+        // first, see if there's an exec-env
+        if let Some(exec_env_run) = self.exec_env(&version) {
+            env.run.push(exec_env_run);
+        }
+
+        // now, add the bin paths to our path
+        env.path.extend(self.list_bin_paths(&version)?);
+
+        Ok(env)
+    }
+
+    pub fn resolve(&self, version: &str) -> Result<Version, PluginScriptError> {
+        match version {
+            "latest" => self.latest(),
+            "latest-stable" => self.latest_stable(),
+            _ => self.find_version(version),
+        }
     }
 }
