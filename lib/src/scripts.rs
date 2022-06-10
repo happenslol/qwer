@@ -329,7 +329,7 @@ impl PluginScripts {
         which: &str,
         version: Option<&Version>,
     ) -> Result<Option<String>, PluginScriptError> {
-        let script_name = format!("help.{which}");
+        let script_name = format!("bin/help.{which}");
         let help_path = self.plugin_dir.join(&script_name);
 
         if !help_path.is_file() {

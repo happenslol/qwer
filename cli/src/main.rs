@@ -184,8 +184,7 @@ fn main() -> Result<()> {
         })
         .init();
 
-    let app = Cli::parse();
-    match app.command {
+    match Cli::parse().command {
         Commands::Hook { shell } => {
             let self_path = std::env::args()
                 .next()
