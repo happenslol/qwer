@@ -2,7 +2,7 @@ use std::io::Write;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use console::{style, StyledObject};
+use console::style;
 use qwer::Shell;
 
 use crate::env::get_current_env;
@@ -22,6 +22,7 @@ struct Cli {
 }
 
 #[derive(Debug, Subcommand)]
+#[clap(disable_help_subcommand(true))]
 enum Commands {
     Hook {
         #[clap(subcommand)]
@@ -63,18 +64,20 @@ enum Commands {
 
     Global {
         name: String,
-        version: Vec<String>,
+        version: String,
     },
 
     Local {
         name: String,
-        version: Vec<String>,
+        version: String,
     },
 
     Shell {
         name: String,
-        version: Vec<String>,
+        version: String,
     },
+
+    Help,
 }
 
 #[derive(Debug, Subcommand)]
@@ -155,30 +158,24 @@ impl ShellOptions {
     }
 }
 
-fn format_log_level(level: &log::Level) -> StyledObject<&str> {
-    match level {
-        log::Level::Error => style("error").red(),
-        log::Level::Warn => style("warn"),
-        log::Level::Debug => style("debug"),
-        log::Level::Trace => style("trace"),
-        _ => unreachable!(),
-    }
-}
-
 fn main() -> Result<()> {
-    env_logger::Builder::from_env("QWER_LOG")
+    env_logger::Builder::new()
         .target(env_logger::Target::Stderr)
         .filter_level(log::LevelFilter::Info)
+        .parse_env("QWER_LOG")
         .format(|buf, record| {
             if let log::Level::Info = record.level() {
                 writeln!(buf, "{}", record.args())
             } else {
-                writeln!(
-                    buf,
-                    "{}: {}",
-                    format_log_level(&record.level()),
-                    record.args()
-                )
+                let level = match record.level() {
+                    log::Level::Error => style(" error ").black().on_red(),
+                    log::Level::Warn => style(" warn ").black().on_yellow(),
+                    log::Level::Debug => style(" debug ").black().on_blue(),
+                    log::Level::Trace => style(" trace ").black().on_cyan(),
+                    _ => unreachable!(),
+                };
+
+                writeln!(buf, "{} {}", level, record.args())
             }
         })
         .init();
@@ -246,5 +243,9 @@ fn main() -> Result<()> {
         Commands::Global { name, version } => version::global(name, version),
         Commands::Local { name, version } => version::local(name, version),
         Commands::Shell { name, version } => version::shell(name, version),
+        Commands::Help => {
+            println!("helping");
+            Ok(())
+        }
     }
 }

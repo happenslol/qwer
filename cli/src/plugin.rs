@@ -1,7 +1,8 @@
 use std::{fs, time::Duration};
 
 use anyhow::{bail, Result};
-use log::info;
+use console::style;
+use log::{info, trace};
 use qwer::plugins::parse_short_repo_url;
 use tabled::{object::Segment, Alignment, Modify, Table, Tabled};
 
@@ -14,16 +15,18 @@ fn update_registry(url: &str, name: &str, _force: bool) -> Result<()> {
     let registry_dir = get_dir(REGISTRIES_DIR)?.join(name);
 
     if !registry_dir.is_dir() {
-        info!("Initializing registry `{name}`...");
+        info!("Initializing plugin registry {}", style(name).bold());
         let registries_dir = get_dir(REGISTRIES_DIR)?;
         git::GitRepo::clone(&registries_dir, url, name, None)?;
     } else {
         let modified = fs::metadata(&registry_dir)?.modified()?;
-        if modified.elapsed()? < Duration::from_secs(60 * 1000) {
+        let elapsed = modified.elapsed()?;
+        trace!("Plugin repo `{}` was updated {}s ago", name, elapsed.as_secs());
+        if elapsed < Duration::from_secs(60 * 60) {
             return Ok(());
         }
 
-        println!("updating plugin repo...");
+        info!("Updating plugin registry {}", style(name).bold());
         let repo = git::GitRepo::new(&registry_dir)?;
         repo.update_to_remote_head()?;
     }

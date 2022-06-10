@@ -2,7 +2,7 @@ use log::trace;
 use std::{
     collections::HashMap,
     fs, io,
-    ops::Deref,
+    ops::{Deref, DerefMut},
     path::{Path, PathBuf},
 };
 use thiserror::Error;
@@ -102,6 +102,10 @@ impl Version {
 pub struct Versions(HashMap<String, Vec<Version>>);
 
 impl Versions {
+    pub fn new() -> Self {
+        Self(HashMap::new())
+    }
+
     /// Parse the contents of a version file and return a map of plugin to version.
     ///
     /// # Examples
@@ -182,6 +186,28 @@ impl Versions {
             .map(|content| Self::parse(&content))
             .collect()
     }
+
+    pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<(), VersionsError> {
+        let contents = self
+            .iter()
+            .map(|entry| {
+                format!(
+                    "{} {}",
+                    entry.0,
+                    entry
+                        .1
+                        .iter()
+                        .map(Version::raw)
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        fs::write(path, contents)?;
+        Ok(())
+    }
 }
 
 impl Deref for Versions {
@@ -189,6 +215,12 @@ impl Deref for Versions {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl DerefMut for Versions {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
 
