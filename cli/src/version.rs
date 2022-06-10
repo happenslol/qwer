@@ -1,16 +1,12 @@
 use std::path::PathBuf;
 
 use anyhow::{anyhow, bail, Result};
-use qwer::versions::{Version, Versions};
+use qwer::versions::Versions;
 
 use crate::dirs::{get_plugin_scripts, TOOL_VERSIONS};
 
 fn use_version_for_dir(name: String, version: String, path: PathBuf) -> Result<()> {
     let scripts = get_plugin_scripts(&name)?;
-    if !scripts.plugin_installed() {
-        bail!("Plugin `{name}` is not installed");
-    }
-
     let version = scripts.resolve(&version)?;
     if !scripts.version_installed(&version) {
         bail!(
@@ -44,11 +40,8 @@ pub fn local(name: String, version: String) -> Result<()> {
 
 pub fn shell(name: String, version: String) -> Result<()> {
     let scripts = get_plugin_scripts(&name)?;
-    if !scripts.plugin_installed() {
-        bail!("Plugin `{name}` is not installed");
-    }
 
-    let version = Version::parse(&version);
+    let version = scripts.resolve(&version)?;
     if !scripts.version_installed(&version) {
         bail!(
             "Version `{}` is not installed for plugin `{}`",
@@ -56,6 +49,24 @@ pub fn shell(name: String, version: String) -> Result<()> {
             &name
         );
     }
+
+    let env = scripts.get_env(&version)?;
+    for (key, val) in env.vars {
+        std::env::set_var(key, val);
+    }
+
+    let current_path = std::env::var("PATH").unwrap_or_default();
+    let path = env
+            .path
+            .iter()
+            .filter(|entry| !current_path.contains(*entry))
+            .map(|it| it.to_owned())
+            .collect::<Vec<_>>()
+            .join(":");
+
+    std::env::set_var("PATH", current_path + ":" + &path);
+
+    // TODO: How do we run exec-env here?
 
     Ok(())
 }

@@ -9,6 +9,7 @@ use crate::env::get_current_env;
 
 mod dirs;
 mod env;
+mod help;
 mod install;
 mod list;
 mod plugin;
@@ -77,7 +78,9 @@ enum Commands {
         version: String,
     },
 
-    Help,
+    Help {
+        name: Option<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -243,9 +246,6 @@ fn main() -> Result<()> {
         Commands::Global { name, version } => version::global(name, version),
         Commands::Local { name, version } => version::local(name, version),
         Commands::Shell { name, version } => version::shell(name, version),
-        Commands::Help => {
-            println!("helping");
-            Ok(())
-        }
+        Commands::Help { name } => help::help(name),
     }
 }

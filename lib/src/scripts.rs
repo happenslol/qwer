@@ -390,10 +390,6 @@ impl PluginScripts {
         Some(run_str)
     }
 
-    pub fn exec_path(&self, _version: &Version) -> Result<Vec<String>, PluginScriptError> {
-        todo!()
-    }
-
     // Latest resolution
 
     pub fn latest_stable(&self) -> Result<Version, PluginScriptError> {
