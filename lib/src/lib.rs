@@ -12,6 +12,17 @@ pub struct Env {
     pub run: Vec<String>,
 }
 
+impl Env {
+    pub fn merge(&mut self, other: Env) {
+        self.path.extend(other.path);
+        self.run.extend(other.run);
+
+        for (key, val) in other.vars {
+            self.vars.insert(key, val);
+        }
+    }
+}
+
 pub trait Shell {
     fn hook(cmd: &str, hook_fn: &str) -> String;
     fn export(env: &Env) -> String;

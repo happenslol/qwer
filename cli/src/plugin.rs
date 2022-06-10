@@ -1,11 +1,12 @@
 use std::{fs, time::Duration};
 
 use anyhow::{bail, Result};
-use log::info;
+use console::style;
+use log::{info, trace};
 use qwer::plugins::parse_short_repo_url;
 use tabled::{object::Segment, Alignment, Modify, Table, Tabled};
 
-use crate::dirs::{get_dir, PLUGINS_DIR, REGISTRIES_DIR};
+use crate::dirs::{get_dir, PLUGINS_DIR, REGISTRIES_DIR, get_plugin_scripts};
 
 const DEFAULT_PLUGIN_REGISTRY_URL: &str = "https://github.com/asdf-vm/asdf-plugins.git";
 const DEFAULT_PLUGIN_REGISTRY: &str = "default";
@@ -14,16 +15,18 @@ fn update_registry(url: &str, name: &str, _force: bool) -> Result<()> {
     let registry_dir = get_dir(REGISTRIES_DIR)?.join(name);
 
     if !registry_dir.is_dir() {
-        info!("Initializing registry `{name}`...");
+        info!("Initializing plugin registry {}", style(name).bold());
         let registries_dir = get_dir(REGISTRIES_DIR)?;
         git::GitRepo::clone(&registries_dir, url, name, None)?;
     } else {
         let modified = fs::metadata(&registry_dir)?.modified()?;
-        if modified.elapsed()? < Duration::from_secs(60 * 1000) {
+        let elapsed = modified.elapsed()?;
+        trace!("Plugin repo `{}` was updated {}s ago", name, elapsed.as_secs());
+        if elapsed < Duration::from_secs(60 * 60) {
             return Ok(());
         }
 
-        println!("updating plugin repo...");
+        info!("Updating plugin registry {}", style(name).bold());
         let repo = git::GitRepo::new(&registry_dir)?;
         repo.update_to_remote_head()?;
     }
@@ -47,6 +50,9 @@ pub fn add(name: String, git_url: Option<String>) -> Result<()> {
     };
 
     git::GitRepo::clone(&plugin_dir, &git_url, &name, None)?;
+
+    let scripts = get_plugin_scripts(&name)?;
+    scripts.post_plugin_add(&git_url)?;
 
     Ok(())
 }
@@ -200,6 +206,9 @@ pub fn remove(name: String) -> Result<()> {
         bail!("plugin `{name}` is not installed");
     }
 
+    let scripts = get_plugin_scripts(&name)?;
+    scripts.pre_plugin_remove()?;
+
     fs::remove_dir_all(remove_plugin_dir)?;
 
     Ok(())
@@ -212,6 +221,8 @@ pub fn update(name: String, git_ref: Option<String>) -> Result<()> {
     }
 
     let repo = git::GitRepo::new(&update_plugin_dir)?;
+    let prev = repo.get_head_ref()?;
+
     if let Some(git_ref) = git_ref {
         println!("updating `{name}` to {git_ref}...");
         repo.update_to_ref(&git_ref)?;
@@ -221,6 +232,10 @@ pub fn update(name: String, git_ref: Option<String>) -> Result<()> {
         println!("updating `{name}` to latest version...");
         repo.update_to_remote_head()?;
     }
+
+    let post = repo.get_head_ref()?;
+    let scripts = get_plugin_scripts(&name)?;
+    scripts.post_plugin_update(&prev, &post)?;
 
     Ok(())
 }

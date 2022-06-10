@@ -3,10 +3,16 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use lazy_static::lazy_static;
 use log::trace;
+use regex::Regex;
 use thiserror::Error;
 
-use crate::versions::Version;
+use crate::{versions::Version, Env};
+
+lazy_static! {
+    static ref LATEST_STABLE_RE: Regex = Regex::new("-src|-dev|-latest|-stm|[-\\.]rc|-alpha|-beta|[-\\.]pre|-next|(a|b|c)[0-9]+|snapshot|master").unwrap();
+}
 
 #[derive(Error, Debug)]
 pub enum PluginScriptError {
@@ -30,6 +36,9 @@ pub enum PluginScriptError {
 
     #[error("no versions were found")]
     NoVersionsFound,
+
+    #[error("no versions were found for query `{0}`")]
+    NoMatchingVersionsFound(String),
 }
 
 pub struct PluginScripts {
@@ -133,8 +142,8 @@ impl PluginScripts {
         self.install_dir.join(version.version_str()).is_dir()
     }
 
-    pub fn find_version(&self, version: String) -> Result<Version, PluginScriptError> {
-        let parsed = Version::parse(&version);
+    pub fn find_version(&self, version: &str) -> Result<Version, PluginScriptError> {
+        let parsed = Version::parse(version);
         match parsed {
             Version::Version(version_str) => {
                 let versions = self.list_all()?;
@@ -299,19 +308,19 @@ impl PluginScripts {
 
     // Help strings
 
-    pub fn help_overview(&self, version: Option<&Version>) -> Result<String, PluginScriptError> {
+    pub fn help_overview(&self, version: Option<&Version>) -> Result<Option<String>, PluginScriptError> {
         self.get_help_str("overview", version)
     }
 
-    pub fn help_deps(&self, version: Option<&Version>) -> Result<String, PluginScriptError> {
+    pub fn help_deps(&self, version: Option<&Version>) -> Result<Option<String>, PluginScriptError> {
         self.get_help_str("deps", version)
     }
 
-    pub fn help_config(&self, version: Option<&Version>) -> Result<String, PluginScriptError> {
+    pub fn help_config(&self, version: Option<&Version>) -> Result<Option<String>, PluginScriptError> {
         self.get_help_str("config", version)
     }
 
-    pub fn help_links(&self, version: Option<&Version>) -> Result<String, PluginScriptError> {
+    pub fn help_links(&self, version: Option<&Version>) -> Result<Option<String>, PluginScriptError> {
         self.get_help_str("links", version)
     }
 
@@ -319,12 +328,12 @@ impl PluginScripts {
         &self,
         which: &str,
         version: Option<&Version>,
-    ) -> Result<String, PluginScriptError> {
-        let script_name = format!("help.{which}");
+    ) -> Result<Option<String>, PluginScriptError> {
+        let script_name = format!("bin/help.{which}");
         let help_path = self.plugin_dir.join(&script_name);
 
         if !help_path.is_file() {
-            return Err(PluginScriptError::ScriptNotFound(script_name));
+            return Ok(None);
         }
 
         let mut env = vec![];
@@ -335,7 +344,7 @@ impl PluginScripts {
 
         let output = self.run_script(&help_path, &env)?;
 
-        Ok(output)
+        Ok(Some(output))
     }
 
     // Paths
@@ -381,27 +390,69 @@ impl PluginScripts {
         Some(run_str)
     }
 
-    pub fn exec_path(&self, _version: &Version) -> Result<Vec<String>, PluginScriptError> {
-        todo!()
-    }
-
     // Latest resolution
 
     pub fn latest_stable(&self) -> Result<Version, PluginScriptError> {
-        todo!()
+        let path = self.plugin_dir.join("bin/latest-stable");
+        if !path.is_file() {
+            let all = self.list_all()?;
+            return all
+                .iter()
+                .filter(|version| !LATEST_STABLE_RE.is_match(&version))
+                .last()
+                .map(|version| Version::parse(version))
+                .ok_or_else(|| {
+                    PluginScriptError::NoMatchingVersionsFound("latest-stable".to_owned())
+                });
+        }
+
+        let output = self.run_script(&path, &[])?;
+        let version = Version::parse(output.trim());
+        Ok(version)
     }
 
     // Hooks
 
-    pub fn post_plugin_add(&self) -> Result<(), PluginScriptError> {
+    pub fn post_plugin_add(&self, install_url: &str) -> Result<(), PluginScriptError> {
+        let path = self.plugin_dir.join("bin/post-plugin-add");
+        if !path.is_file() {
+            return Ok(());
+        }
+
+        self.run_script(&path, &[("ASDF_PLUGIN_SOURCE_URL", install_url)])?;
+
         Ok(())
     }
 
-    pub fn post_plugin_update(&self) -> Result<(), PluginScriptError> {
+    pub fn post_plugin_update(&self, prev: &str, post: &str) -> Result<(), PluginScriptError> {
+        let path = self.plugin_dir.join("bin/post-plugin-add");
+        if !path.is_file() {
+            return Ok(());
+        }
+
+        self.run_script(
+            &path,
+            &[
+                ("ASDF_PLUGIN_PATH", &*self.plugin_dir.to_string_lossy()),
+                ("ASDF_PLUGIN_PREV_REF", prev),
+                ("ASDF_PLUGIN_POST_REF", post),
+            ],
+        )?;
+
         Ok(())
     }
 
     pub fn pre_plugin_remove(&self) -> Result<(), PluginScriptError> {
+        let path = self.plugin_dir.join("bin/post-plugin-add");
+        if !path.is_file() {
+            return Ok(());
+        }
+
+        self.run_script(
+            &path,
+            &[("ASDF_PLUGIN_PATH", &*self.plugin_dir.to_string_lossy())],
+        )?;
+
         Ok(())
     }
 
@@ -409,5 +460,29 @@ impl PluginScripts {
 
     pub fn extension(&self, _ext: &str) -> Result<String, PluginScriptError> {
         Ok(String::new())
+    }
+
+    // Helpers
+
+    pub fn get_env(&self, version: &Version) -> Result<Env, PluginScriptError> {
+        let mut env = Env::default();
+
+        // first, see if there's an exec-env
+        if let Some(exec_env_run) = self.exec_env(&version) {
+            env.run.push(exec_env_run);
+        }
+
+        // now, add the bin paths to our path
+        env.path.extend(self.list_bin_paths(&version)?);
+
+        Ok(env)
+    }
+
+    pub fn resolve(&self, version: &str) -> Result<Version, PluginScriptError> {
+        match version {
+            "latest" => self.latest(),
+            "latest-stable" => self.latest_stable(),
+            _ => self.find_version(version),
+        }
     }
 }

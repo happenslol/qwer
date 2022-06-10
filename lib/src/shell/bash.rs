@@ -27,9 +27,19 @@ fi"#
     fn export(env: &Env) -> String {
         trace!("exporting bash env:\n{env:#?}");
 
-        let path = env.path.join(":");
-        let vars = env
-            .vars
+        let current_path = std::env::var("PATH").unwrap_or_default();
+        let path = env
+            .path
+            .iter()
+            .filter(|entry| !current_path.contains(*entry))
+            .map(|it| it.to_owned())
+            .collect::<Vec<_>>()
+            .join(":");
+
+        let mut vars = env.vars.iter().collect::<Vec<_>>();
+        vars.sort_by(|a, b| a.0.cmp(b.0));
+
+        let vars = vars
             .iter()
             .map(|(key, val)| format!("export {key}={val};"))
             .collect::<Vec<String>>()
@@ -42,7 +52,7 @@ fi"#
             .collect::<Vec<String>>()
             .join("");
 
-        format!("export PATH=$PATH:{path};{vars}{runs}")
+        format!("export PATH={path}:$PATH;{vars}{runs}")
     }
 }
 
