@@ -308,19 +308,19 @@ impl PluginScripts {
 
     // Help strings
 
-    pub fn help_overview(&self, version: Option<&Version>) -> Result<String, PluginScriptError> {
+    pub fn help_overview(&self, version: Option<&Version>) -> Result<Option<String>, PluginScriptError> {
         self.get_help_str("overview", version)
     }
 
-    pub fn help_deps(&self, version: Option<&Version>) -> Result<String, PluginScriptError> {
+    pub fn help_deps(&self, version: Option<&Version>) -> Result<Option<String>, PluginScriptError> {
         self.get_help_str("deps", version)
     }
 
-    pub fn help_config(&self, version: Option<&Version>) -> Result<String, PluginScriptError> {
+    pub fn help_config(&self, version: Option<&Version>) -> Result<Option<String>, PluginScriptError> {
         self.get_help_str("config", version)
     }
 
-    pub fn help_links(&self, version: Option<&Version>) -> Result<String, PluginScriptError> {
+    pub fn help_links(&self, version: Option<&Version>) -> Result<Option<String>, PluginScriptError> {
         self.get_help_str("links", version)
     }
 
@@ -328,12 +328,12 @@ impl PluginScripts {
         &self,
         which: &str,
         version: Option<&Version>,
-    ) -> Result<String, PluginScriptError> {
+    ) -> Result<Option<String>, PluginScriptError> {
         let script_name = format!("help.{which}");
         let help_path = self.plugin_dir.join(&script_name);
 
         if !help_path.is_file() {
-            return Err(PluginScriptError::ScriptNotFound(script_name));
+            return Ok(None);
         }
 
         let mut env = vec![];
@@ -344,7 +344,7 @@ impl PluginScripts {
 
         let output = self.run_script(&help_path, &env)?;
 
-        Ok(output)
+        Ok(Some(output))
     }
 
     // Paths

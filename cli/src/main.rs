@@ -79,7 +79,8 @@ enum Commands {
     },
 
     Help {
-        name: Option<String>,
+        plugin: String,
+        version: Option<String>,
     },
 }
 
@@ -183,7 +184,8 @@ fn main() -> Result<()> {
         })
         .init();
 
-    match Cli::parse().command {
+    let app = Cli::parse();
+    match app.command {
         Commands::Hook { shell } => {
             let self_path = std::env::args()
                 .next()
@@ -246,6 +248,6 @@ fn main() -> Result<()> {
         Commands::Global { name, version } => version::global(name, version),
         Commands::Local { name, version } => version::local(name, version),
         Commands::Shell { name, version } => version::shell(name, version),
-        Commands::Help { name } => help::help(name),
+        Commands::Help { plugin, version } => help::help(plugin, version),
     }
 }

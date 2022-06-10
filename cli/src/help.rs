@@ -1,5 +1,30 @@
-use anyhow::Result;
+use crate::dirs::get_plugin_scripts;
+use anyhow::{bail, Result};
+use qwer::versions::Version;
 
-pub fn help(name: Option<String>) -> Result<()> {
-    todo!()
+pub fn help(plugin: String, version: Option<String>) -> Result<()> {
+    let scripts = get_plugin_scripts(&plugin)?;
+    let version = version.map(|raw| Version::parse(&raw));
+
+    let overview = scripts.help_overview(version.as_ref())?;
+    if overview.is_none() {
+        bail!("No help for plugin `{plugin}`");
+    }
+
+    let overview = overview.unwrap();
+    println!("{overview}");
+
+    if let Some(content) = scripts.help_deps(version.as_ref())? {
+        println!("{content}");
+    }
+
+    if let Some(content) = scripts.help_config(version.as_ref())? {
+        println!("{content}");
+    }
+
+    if let Some(content) = scripts.help_links(version.as_ref())? {
+        println!("{content}");
+    }
+
+    Ok(())
 }
