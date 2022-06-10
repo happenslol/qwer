@@ -393,16 +393,47 @@ impl PluginScripts {
 
     // Hooks
 
-    pub fn post_plugin_add(&self) -> Result<(), PluginScriptError> {
-        todo!()
+    pub fn post_plugin_add(&self, install_url: &str) -> Result<(), PluginScriptError> {
+        let path = self.plugin_dir.join("bin/post-plugin-add");
+        if !path.is_file() {
+            return Ok(());
+        }
+
+        self.run_script(&path, &[("ASDF_PLUGIN_SOURCE_URL", install_url)])?;
+
+        Ok(())
     }
 
-    pub fn post_plugin_update(&self) -> Result<(), PluginScriptError> {
-        todo!()
+    pub fn post_plugin_update(&self, prev: &str, post: &str) -> Result<(), PluginScriptError> {
+        let path = self.plugin_dir.join("bin/post-plugin-add");
+        if !path.is_file() {
+            return Ok(());
+        }
+
+        self.run_script(
+            &path,
+            &[
+                ("ASDF_PLUGIN_PATH", &*self.plugin_dir.to_string_lossy()),
+                ("ASDF_PLUGIN_PREV_REF", prev),
+                ("ASDF_PLUGIN_POST_REF", post),
+            ],
+        )?;
+
+        Ok(())
     }
 
     pub fn pre_plugin_remove(&self) -> Result<(), PluginScriptError> {
-        todo!()
+        let path = self.plugin_dir.join("bin/post-plugin-add");
+        if !path.is_file() {
+            return Ok(());
+        }
+
+        self.run_script(
+            &path,
+            &[("ASDF_PLUGIN_PATH", &*self.plugin_dir.to_string_lossy())],
+        )?;
+
+        Ok(())
     }
 
     // Extensions

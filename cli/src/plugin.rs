@@ -6,7 +6,7 @@ use log::{info, trace};
 use qwer::plugins::parse_short_repo_url;
 use tabled::{object::Segment, Alignment, Modify, Table, Tabled};
 
-use crate::dirs::{get_dir, PLUGINS_DIR, REGISTRIES_DIR};
+use crate::dirs::{get_dir, PLUGINS_DIR, REGISTRIES_DIR, get_plugin_scripts};
 
 const DEFAULT_PLUGIN_REGISTRY_URL: &str = "https://github.com/asdf-vm/asdf-plugins.git";
 const DEFAULT_PLUGIN_REGISTRY: &str = "default";
@@ -50,6 +50,9 @@ pub fn add(name: String, git_url: Option<String>) -> Result<()> {
     };
 
     git::GitRepo::clone(&plugin_dir, &git_url, &name, None)?;
+
+    let scripts = get_plugin_scripts(&name)?;
+    scripts.post_plugin_add(&git_url)?;
 
     Ok(())
 }
@@ -203,6 +206,9 @@ pub fn remove(name: String) -> Result<()> {
         bail!("plugin `{name}` is not installed");
     }
 
+    let scripts = get_plugin_scripts(&name)?;
+    scripts.pre_plugin_remove()?;
+
     fs::remove_dir_all(remove_plugin_dir)?;
 
     Ok(())
@@ -215,6 +221,8 @@ pub fn update(name: String, git_ref: Option<String>) -> Result<()> {
     }
 
     let repo = git::GitRepo::new(&update_plugin_dir)?;
+    let prev = repo.get_head_ref()?;
+
     if let Some(git_ref) = git_ref {
         println!("updating `{name}` to {git_ref}...");
         repo.update_to_ref(&git_ref)?;
@@ -224,6 +232,10 @@ pub fn update(name: String, git_ref: Option<String>) -> Result<()> {
         println!("updating `{name}` to latest version...");
         repo.update_to_remote_head()?;
     }
+
+    let post = repo.get_head_ref()?;
+    let scripts = get_plugin_scripts(&name)?;
+    scripts.post_plugin_update(&prev, &post)?;
 
     Ok(())
 }
