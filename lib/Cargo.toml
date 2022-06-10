@@ -8,6 +8,8 @@ thiserror = "1.0.31"
 duct = "0.13.5"
 log = "0.4.17"
 console = "0.15.0"
+regex = "1.5.6"
+lazy_static = "1.4.0"
 
 [dev-dependencies]
 tempfile = "3.3.0"

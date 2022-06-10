@@ -3,10 +3,16 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use lazy_static::lazy_static;
 use log::trace;
+use regex::Regex;
 use thiserror::Error;
 
 use crate::{versions::Version, Env};
+
+lazy_static! {
+    static ref LATEST_STABLE_RE: Regex = Regex::new("-src|-dev|-latest|-stm|[-\\.]rc|-alpha|-beta|[-\\.]pre|-next|(a|b|c)[0-9]+|snapshot|master").unwrap();
+}
 
 #[derive(Error, Debug)]
 pub enum PluginScriptError {
@@ -30,6 +36,9 @@ pub enum PluginScriptError {
 
     #[error("no versions were found")]
     NoVersionsFound,
+
+    #[error("no versions were found for query `{0}`")]
+    NoMatchingVersionsFound(String),
 }
 
 pub struct PluginScripts {
@@ -388,7 +397,22 @@ impl PluginScripts {
     // Latest resolution
 
     pub fn latest_stable(&self) -> Result<Version, PluginScriptError> {
-        todo!()
+        let path = self.plugin_dir.join("bin/latest-stable");
+        if !path.is_file() {
+            let all = self.list_all()?;
+            return all
+                .iter()
+                .filter(|version| !LATEST_STABLE_RE.is_match(&version))
+                .last()
+                .map(|version| Version::parse(version))
+                .ok_or_else(|| {
+                    PluginScriptError::NoMatchingVersionsFound("latest-stable".to_owned())
+                });
+        }
+
+        let output = self.run_script(&path, &[])?;
+        let version = Version::parse(output.trim());
+        Ok(version)
     }
 
     // Hooks
