@@ -27,14 +27,7 @@ fi"#
     fn export(env: &Env) -> String {
         trace!("exporting bash env:\n{env:#?}");
 
-        let current_path = std::env::var("PATH").unwrap_or_default();
-        let path = env
-            .path
-            .iter()
-            .filter(|entry| !current_path.contains(*entry))
-            .map(|it| it.to_owned())
-            .collect::<Vec<_>>()
-            .join(":");
+        let path = env.path.join(":");
 
         let mut vars = env.vars.iter().collect::<Vec<_>>();
         vars.sort_by(|a, b| a.0.cmp(b.0));
@@ -45,14 +38,11 @@ fi"#
             .collect::<Vec<String>>()
             .join("");
 
-        let runs = env
-            .run
-            .iter()
-            .map(|cmd| format!("{cmd};"))
-            .collect::<Vec<String>>()
-            .join("");
-
-        format!("export PATH={path}:$PATH;{vars}{runs}")
+        if !path.is_empty() {
+            format!("export PATH={path}:$PATH;{vars}")
+        } else {
+            format!("{vars}")
+        }
     }
 }
 
@@ -69,7 +59,6 @@ mod tests {
         assert!(result.contains("export PATH=$PATH:foo:bar;"));
         assert!(result.contains("export foo=bar;"));
         assert!(result.contains("export baz=foo;"));
-        assert!(result.contains("echo foo;"));
     }
 
     #[test]

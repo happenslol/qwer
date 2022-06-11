@@ -66,7 +66,5 @@ pub fn shell(name: String, version: String) -> Result<()> {
 
     std::env::set_var("PATH", current_path + ":" + &path);
 
-    // TODO: How do we run exec-env here?
-
     Ok(())
 }

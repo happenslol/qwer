@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     fs,
     path::{Path, PathBuf},
 };
@@ -12,6 +13,7 @@ use crate::{versions::Version, Env};
 
 lazy_static! {
     static ref LATEST_STABLE_RE: Regex = Regex::new("-src|-dev|-latest|-stm|[-\\.]rc|-alpha|-beta|[-\\.]pre|-next|(a|b|c)[0-9]+|snapshot|master").unwrap();
+    static ref IGNORED_ENV_VARS: HashSet<&'static str> = HashSet::from_iter(["SHLVL", "PATH"]);
 }
 
 #[derive(Error, Debug)]
@@ -308,19 +310,31 @@ impl PluginScripts {
 
     // Help strings
 
-    pub fn help_overview(&self, version: Option<&Version>) -> Result<Option<String>, PluginScriptError> {
+    pub fn help_overview(
+        &self,
+        version: Option<&Version>,
+    ) -> Result<Option<String>, PluginScriptError> {
         self.get_help_str("overview", version)
     }
 
-    pub fn help_deps(&self, version: Option<&Version>) -> Result<Option<String>, PluginScriptError> {
+    pub fn help_deps(
+        &self,
+        version: Option<&Version>,
+    ) -> Result<Option<String>, PluginScriptError> {
         self.get_help_str("deps", version)
     }
 
-    pub fn help_config(&self, version: Option<&Version>) -> Result<Option<String>, PluginScriptError> {
+    pub fn help_config(
+        &self,
+        version: Option<&Version>,
+    ) -> Result<Option<String>, PluginScriptError> {
         self.get_help_str("config", version)
     }
 
-    pub fn help_links(&self, version: Option<&Version>) -> Result<Option<String>, PluginScriptError> {
+    pub fn help_links(
+        &self,
+        version: Option<&Version>,
+    ) -> Result<Option<String>, PluginScriptError> {
         self.get_help_str("links", version)
     }
 
@@ -372,22 +386,57 @@ impl PluginScripts {
 
     // Env modification
 
-    pub fn exec_env(&self, version: &Version) -> Option<String> {
+    pub fn exec_env(
+        &self,
+        version: &Version,
+    ) -> Result<Option<Vec<(String, String)>>, PluginScriptError> {
+        // TODO: Do we need to support adding to path entries here?
+
+        // This is pretty stupid, but there's no way for us to know
+        // what vars are being changed unless we actually run the script
+        // and compare the env before and after.
+        // Surely, there must be a better way to do this...
         let version_dir = self.install_dir.join(version.version_str());
         let exec_path = self.plugin_dir.join("bin/exec-env");
         if !exec_path.is_file() {
-            return None;
+            return Ok(None);
         }
 
+        // We use a double newline to delimit input and output, since we can
+        // split by that afterwards and take the first and last result.
+        // No matter what the script outputs, this will always work since
+        // env will always print one line per env var, and escape characters itself.
         let run_str = format!(
-            r#"ASDF_INSTALL_TYPE={} ASDF_INSTALL_VERSION={} ASDF_INSTALL_PATH={} . "{}""#,
+            r#"env;echo;ASDF_INSTALL_TYPE={} ASDF_INSTALL_VERSION={} ASDF_INSTALL_PATH={} . "{}";echo;env;"#,
             version.install_type(),
             version.raw(),
             version_dir.to_string_lossy(),
             exec_path.to_string_lossy(),
         );
 
-        Some(run_str)
+        let output = duct::cmd!("bash", "-c", &run_str).read()?;
+        let mut parts = output.split("\n\n");
+        let env_before = parts
+            .next()
+            .unwrap_or_else(|| "")
+            .trim()
+            .split('\n')
+            .collect::<Vec<_>>();
+
+        let env_before_set = HashSet::<&str>::from_iter(env_before);
+
+        let env_after = parts
+            .last()
+            .unwrap_or_else(|| "")
+            .trim()
+            .split('\n')
+            .filter(|line| !env_before_set.contains(line))
+            .filter_map(|line| line.split_once('='))
+            .filter(|(key, _)| !IGNORED_ENV_VARS.contains(key))
+            .map(|(key, val)| (key.to_owned(), val.to_owned()))
+            .collect::<Vec<_>>();
+
+        Ok(Some(env_after))
     }
 
     // Latest resolution
@@ -468,12 +517,25 @@ impl PluginScripts {
         let mut env = Env::default();
 
         // first, see if there's an exec-env
-        if let Some(exec_env_run) = self.exec_env(&version) {
-            env.run.push(exec_env_run);
+        if let Some(exec_env) = self.exec_env(&version)? {
+            env.vars.extend(exec_env);
         }
 
         // now, add the bin paths to our path
         env.path.extend(self.list_bin_paths(&version)?);
+
+        if env.path.is_empty() {
+            let version_path = self.install_dir.join(version.version_str());
+
+            // Check if there's a bin folder in our install
+            let maybe_bin_path = version_path.join("bin");
+            if maybe_bin_path.is_dir() {
+                env.path.push(maybe_bin_path.to_string_lossy().to_string());
+            } else {
+                // Just add the install folder
+                env.path.push(maybe_bin_path.to_string_lossy().to_string());
+            }
+        }
 
         Ok(env)
     }

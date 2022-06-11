@@ -30,14 +30,7 @@ fi"#
     fn export(env: &Env) -> String {
         trace!("exporting zsh env:\n{env:#?}");
 
-        let current_path = std::env::var("PATH").unwrap_or_default();
-        let path = env
-            .path
-            .iter()
-            .filter(|entry| !current_path.contains(*entry))
-            .map(|it| it.to_owned())
-            .collect::<Vec<_>>()
-            .join(":");
+        let path = env.path.join(":");
 
         let vars = env
             .vars
@@ -46,17 +39,10 @@ fi"#
             .collect::<Vec<String>>()
             .join("");
 
-        let runs = env
-            .run
-            .iter()
-            .map(|cmd| format!("{cmd};"))
-            .collect::<Vec<String>>()
-            .join("");
-
         if !path.is_empty() {
-            format!("export PATH={path}:$PATH;{vars}{runs}")
+            format!("export PATH={path}:$PATH;{vars}")
         } else {
-            format!("{vars}{runs}")
+            format!("{vars}")
         }
     }
 }
