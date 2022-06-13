@@ -136,7 +136,7 @@ pub fn list(urls: bool, refs: bool) -> Result<()> {
     }
 
     let table_str = table
-        .with(tabled::Style::rounded().vertical_off())
+        .with(tabled::Style::blank())
         .with(Modify::new(Segment::all()).with(Alignment::left()))
         .to_string();
 
@@ -145,20 +145,10 @@ pub fn list(urls: bool, refs: bool) -> Result<()> {
     Ok(())
 }
 
-fn display_installed(b: &bool) -> String {
-    match b {
-        true => "✅".to_owned(),
-        false => "".to_owned(),
-    }
-}
-
 #[derive(Tabled)]
 struct ListAllItem {
     name: String,
     url: String,
-
-    #[tabled(display_with = "display_installed")]
-    installed: bool,
 }
 
 pub fn list_all() -> Result<()> {
@@ -185,16 +175,20 @@ pub fn list_all() -> Result<()> {
                 false
             };
 
-            Ok(ListAllItem {
-                name,
-                url,
-                installed,
-            })
+            let name = if installed {
+                // TODO: Color seems to mess up the table here. How could
+                // we display this more nicely but still accessible?
+                format!("{} ✓", name)
+            } else {
+                name
+            };
+
+            Ok(ListAllItem { name, url })
         })
         .collect::<Result<Vec<_>>>()?;
 
     let table = Table::new(plugins)
-        .with(tabled::Style::rounded().vertical_off())
+        .with(tabled::Style::blank().vertical_off())
         .with(Modify::new(Segment::all()).with(Alignment::left()))
         .to_string();
 

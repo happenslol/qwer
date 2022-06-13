@@ -90,7 +90,7 @@ enum Commands {
     },
 
     Help {
-        plugin: String,
+        plugin: Option<String>,
         version: Option<String>,
     },
 }
