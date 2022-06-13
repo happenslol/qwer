@@ -83,17 +83,17 @@ impl Env {
             .collect::<Vec<_>>()
             .join("\n");
 
-        let vars_writer = base64::write::EncoderStringWriter::new(base64::STANDARD);
+        let vars_writer = base64::write::EncoderStringWriter::new(base64::STANDARD_NO_PAD);
         let mut vars_writer = snap::write::FrameEncoder::new(vars_writer);
         vars_writer
-            .write(vars_str.as_bytes())
+            .write_all(vars_str.as_bytes())
             .expect("Failed to write vars");
 
         let path_str = self.path.iter().cloned().collect::<Vec<_>>().join("\n");
-        let path_writer = base64::write::EncoderStringWriter::new(base64::STANDARD);
+        let path_writer = base64::write::EncoderStringWriter::new(base64::STANDARD_NO_PAD);
         let mut path_writer = snap::write::FrameEncoder::new(path_writer);
         path_writer
-            .write(path_str.as_bytes())
+            .write_all(path_str.as_bytes())
             .expect("Failed to write path");
 
         [
@@ -106,7 +106,7 @@ impl Env {
                 .expect("Failed to flush path")
                 .into_inner(),
         ]
-        .map(|part| base64::encode(part))
+        .map(base64::encode)
         .join(".")
     }
 
@@ -117,7 +117,8 @@ impl Env {
         }
 
         let mut vars_reader = StringReader::new(parts[0]);
-        let vars_reader = base64::read::DecoderReader::new(&mut vars_reader, base64::STANDARD);
+        let vars_reader =
+            base64::read::DecoderReader::new(&mut vars_reader, base64::STANDARD_NO_PAD);
         let mut vars_reader = snap::read::FrameDecoder::new(vars_reader);
         let mut vars_str = String::new();
         vars_reader.read_to_string(&mut vars_str)?;
@@ -130,7 +131,8 @@ impl Env {
         }
 
         let mut path_reader = StringReader::new(parts[1]);
-        let path_reader = base64::read::DecoderReader::new(&mut path_reader, base64::STANDARD);
+        let path_reader =
+            base64::read::DecoderReader::new(&mut path_reader, base64::STANDARD_NO_PAD);
         let mut path_reader = snap::read::FrameDecoder::new(path_reader);
         let mut path_str = String::new();
         path_reader.read_to_string(&mut path_str)?;
@@ -172,9 +174,9 @@ impl<'a> StringReader<'a> {
 
 impl<'a> std::io::Read for StringReader<'a> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        for i in 0..buf.len() {
+        for (i, c) in buf.iter_mut().enumerate() {
             if let Some(x) = self.iter.next() {
-                buf[i] = *x;
+                *c = *x;
             } else {
                 return Ok(i);
             }

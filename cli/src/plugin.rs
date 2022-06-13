@@ -6,7 +6,7 @@ use log::{info, trace};
 use qwer::plugins::parse_short_repo_url;
 use tabled::{object::Segment, Alignment, Modify, Table, Tabled};
 
-use crate::dirs::{get_dir, PLUGINS_DIR, REGISTRIES_DIR, get_plugin_scripts};
+use crate::dirs::{get_dir, get_plugin_scripts, PLUGINS_DIR, REGISTRIES_DIR};
 
 const DEFAULT_PLUGIN_REGISTRY_URL: &str = "https://github.com/asdf-vm/asdf-plugins.git";
 const DEFAULT_PLUGIN_REGISTRY: &str = "default";
@@ -21,7 +21,11 @@ fn update_registry(url: &str, name: &str, _force: bool) -> Result<()> {
     } else {
         let modified = fs::metadata(&registry_dir)?.modified()?;
         let elapsed = modified.elapsed()?;
-        trace!("Plugin repo `{}` was updated {}s ago", name, elapsed.as_secs());
+        trace!(
+            "Plugin repo `{}` was updated {}s ago",
+            name,
+            elapsed.as_secs()
+        );
         if elapsed < Duration::from_secs(60 * 60) {
             return Ok(());
         }

@@ -98,12 +98,12 @@ impl Version {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Versions(HashMap<String, Vec<Version>>);
 
 impl Versions {
     pub fn new() -> Self {
-        Self(HashMap::new())
+        Self::default()
     }
 
     /// Parse the contents of a version file and return a map of plugin to version.
@@ -183,7 +183,7 @@ impl Versions {
             .map(|path| fs::read_to_string(path))
             .collect::<Result<Vec<_>, _>>()?
             .iter()
-            .map(|content| Self::parse(&content))
+            .map(|content| Self::parse(content))
             .collect()
     }
 

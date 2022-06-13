@@ -9,7 +9,10 @@ use log::trace;
 use regex::Regex;
 use thiserror::Error;
 
-use crate::{versions::Version, env::{Env, IGNORED_ENV_VARS}};
+use crate::{
+    env::{Env, IGNORED_ENV_VARS},
+    versions::Version,
+};
 
 lazy_static! {
     static ref LATEST_STABLE_RE: Regex = Regex::new("-src|-dev|-latest|-stm|[-\\.]rc|-alpha|-beta|[-\\.]pre|-next|(a|b|c)[0-9]+|snapshot|master").unwrap();
@@ -81,7 +84,7 @@ impl PluginScripts {
     ) -> Result<String, PluginScriptError> {
         if log::log_enabled!(log::Level::Trace) {
             let script_path = script.as_ref();
-            let contents = fs::read_to_string(&script_path).unwrap_or("".to_owned());
+            let contents = fs::read_to_string(&script_path).unwrap_or_else(|_| "".to_owned());
             trace!("Running script `{script_path:?}` with content: \n{contents}");
         }
 
@@ -417,7 +420,7 @@ impl PluginScripts {
         let mut parts = output.split("\n\n");
         let env_before = parts
             .next()
-            .unwrap_or_else(|| "")
+            .unwrap_or("")
             .trim()
             .split('\n')
             .collect::<Vec<_>>();
@@ -426,7 +429,7 @@ impl PluginScripts {
 
         let env_after = parts
             .last()
-            .unwrap_or_else(|| "")
+            .unwrap_or("")
             .trim()
             .split('\n')
             .filter(|line| !env_before_set.contains(line))
@@ -446,7 +449,7 @@ impl PluginScripts {
             let all = self.list_all()?;
             return all
                 .iter()
-                .filter(|version| !LATEST_STABLE_RE.is_match(&version))
+                .filter(|version| !LATEST_STABLE_RE.is_match(version))
                 .last()
                 .map(|version| Version::parse(version))
                 .ok_or_else(|| {
@@ -516,12 +519,12 @@ impl PluginScripts {
         let mut env = Env::default();
 
         // first, see if there's an exec-env
-        if let Some(exec_env) = self.exec_env(&version)? {
+        if let Some(exec_env) = self.exec_env(version)? {
             env.vars.extend(exec_env);
         }
 
         // now, add the bin paths to our path
-        env.path.extend(self.list_bin_paths(&version)?);
+        env.path.extend(self.list_bin_paths(version)?);
 
         if env.path.is_empty() {
             let version_path = self.install_dir.join(version.version_str());
@@ -529,10 +532,11 @@ impl PluginScripts {
             // Check if there's a bin folder in our install
             let maybe_bin_path = version_path.join("bin");
             if maybe_bin_path.is_dir() {
-                env.path.insert(maybe_bin_path.to_string_lossy().to_string());
+                env.path
+                    .insert(maybe_bin_path.to_string_lossy().to_string());
             } else {
                 // Just add the install folder
-                env.path.insert(maybe_bin_path.to_string_lossy().to_string());
+                env.path.insert(version_path.to_string_lossy().to_string());
             }
         }
 

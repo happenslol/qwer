@@ -1,15 +1,15 @@
 use log::trace;
 
-use crate::Shell;
+use super::Shell;
 
 pub struct Zsh;
 
 impl Shell for Zsh {
-    fn hook(cmd: &str, hook_fn: &str) -> String {
+    fn hook(&self, cmd: &str, hook_fn: &str) -> String {
         let result = format!(
             r#"_{hook_fn}() {{
   trap -- '' SIGINT;
-  {cmd};
+  eval "$({cmd})";
   trap - SIGINT;
 }}
 typeset -ag precmd_functions;
@@ -26,6 +26,14 @@ fi"#
 
         result
     }
+
+    fn set(&self, state: &mut super::ShellState, var: &str, value: &str) {
+        state.append(&format!("export {var}={value};"));
+    }
+
+    fn unset(&self, state: &mut super::ShellState, var: &str) {
+        state.append(&format!("unset {var};"));
+    }
 }
 
 #[cfg(test)]
@@ -35,11 +43,11 @@ mod tests {
     #[test]
     fn hook_zsh() {
         assert_eq!(
-            Zsh::hook("\"./foo\" export zsh", "foo_hook"),
+            Zsh.hook("\"./foo\" export zsh", "foo_hook"),
             String::from(
                 r#"_foo_hook() {
   trap -- '' SIGINT;
-  "./foo" export zsh;
+  eval "$("./foo" export zsh)";
   trap - SIGINT;
 }
 typeset -ag precmd_functions;

@@ -3,7 +3,7 @@ use std::io::Write;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use console::style;
-use qwer::Shell;
+use qwer::shell::Shell;
 
 mod dirs;
 mod env;
@@ -28,7 +28,10 @@ enum Commands {
         shell: ShellOptions,
     },
 
-    Export,
+    Export {
+        #[clap(subcommand)]
+        shell: ShellOptions,
+    },
 
     Plugin {
         #[clap(subcommand)]
@@ -148,10 +151,10 @@ enum ListCommand {
 }
 
 impl ShellOptions {
-    fn hook(&self, cmd: &str, hook_fn: &str) -> String {
+    fn get(&self) -> &dyn Shell {
         match self {
-            ShellOptions::Bash => qwer::shell::Bash::hook(cmd, hook_fn),
-            ShellOptions::Zsh => qwer::shell::Zsh::hook(cmd, hook_fn),
+            ShellOptions::Bash => &qwer::shell::Bash,
+            ShellOptions::Zsh => &qwer::shell::Zsh,
         }
     }
 
@@ -192,13 +195,19 @@ fn main() -> Result<()> {
                 .expect("Failed to get executable path");
 
             let shell_name = shell.name();
+            let shell_fns = shell.get();
             let hook_cmd = format!("\"{self_path}\" export {shell_name}");
-            let hook = shell.hook(&hook_cmd, "qwer_hook");
+            let hook = shell_fns.hook(&hook_cmd, "qwer_hook");
             print!("{hook}");
 
             Ok(())
         }
-        Commands::Export => env::update_env(),
+        Commands::Export { shell } => {
+            let set_env = env::update_env(shell.get())?;
+            print!("{set_env}");
+
+            Ok(())
+        }
         Commands::Plugin { command } => match command {
             PluginCommand::Add { name, git_url } => plugin::add(name, git_url),
             PluginCommand::List {

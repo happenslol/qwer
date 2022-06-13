@@ -1,71 +1,80 @@
 use anyhow::Result;
 use log::trace;
-use qwer::{env::Env, versions::Versions};
+use qwer::{
+    env::Env,
+    shell::{Shell, ShellState},
+    versions::Versions,
+};
 
 use crate::dirs::{get_dir, get_plugin_scripts, INSTALLS_DIR, TOOL_VERSIONS};
 
-pub fn update_env() -> Result<()> {
+pub fn update_env(shell: &dyn Shell) -> Result<String> {
+    let mut state = ShellState::new();
+
     match get_current_env()? {
-        Some(target_env) => {
-            let target_env_hash = format!("{}", target_env.hash());
-            let current_env_hash = std::env::var("QWER_STATE").ok();
-            let changed = current_env_hash
-                .as_ref()
-                .map(|hash| hash == &target_env_hash)
-                .unwrap_or(true);
-
-            trace!(
-                "Comparing current env `{target_env_hash}` to target env `{current_env_hash:?}`"
-            );
-
-            if !changed {
-                trace!("Env did not change");
-                return Ok(());
-            }
-
-            // Env was changed, update it
-            revert_current_env();
-            let target_env_str = target_env.serialize();
-
-            // TODO: Store previous env here
-            trace!("Setting state to {target_env_hash}");
-            std::env::set_var("QWER_STATE", target_env_hash);
-            trace!("Setting serialized current env");
-            std::env::set_var("QWER_CURRENT", target_env_str);
-
-            for (key, val) in target_env.vars {
-                trace!("Setting {key} to {val}");
-                std::env::set_var(key, val);
-            }
-
-            if !target_env.path.is_empty() {
-                let current_path = std::env::var("PATH").unwrap_or_default();
-                let target_path = target_env
-                    .path
-                    .iter()
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .join(":");
-
-                trace!("Adding to path: {:?}", target_env.path);
-                std::env::set_var("PATH", format!("{target_path}:{current_path}"));
-            }
+        Some(target_env) => apply_target_env(shell, &mut state, &target_env),
+        None => {
+            revert_current_env(shell, &mut state);
+            clear_state_vars(shell, &mut state);
         }
-        None => revert_current_env(),
-    };
+    }
 
-    Ok(())
+    Ok(state.build())
 }
 
-fn revert_current_env() {
+fn apply_target_env(shell: &dyn Shell, state: &mut ShellState, target_env: &Env) {
+    let target_env_hash = format!("{}", target_env.hash());
+    let current_env_hash = std::env::var("QWER_STATE").ok();
+    let changed = current_env_hash
+        .as_ref()
+        .map(|hash| hash == &target_env_hash)
+        .unwrap_or(true);
+
+    trace!("Comparing current env `{target_env_hash}` to target env `{current_env_hash:?}`");
+
+    if !changed {
+        trace!("Env did not change");
+        return;
+    }
+
+    // Env was changed, update it
+    revert_current_env(shell, state);
+    let target_env_str = target_env.serialize();
+
+    // TODO: Store previous env here
+    trace!("Setting state to {target_env_hash}");
+    shell.set(state, "QWER_STATE", &target_env_hash);
+    trace!("Setting serialized current env");
+    shell.set(state, "QWER_CURRENT", &target_env_str);
+
+    for (key, val) in &target_env.vars {
+        trace!("Setting {key} to {val}");
+        shell.set(state, key, val);
+    }
+
+    if !target_env.path.is_empty() {
+        let current_path = std::env::var("PATH").unwrap_or_default();
+        let target_path = target_env
+            .path
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(":");
+
+        trace!("Adding to path: {:?}", target_env.path);
+        shell.set(state, "PATH", &format!("{target_path}:{current_path}"));
+    }
+}
+
+fn revert_current_env(shell: &dyn Shell, state: &mut ShellState) {
     trace!("Reverting current env");
 
     // We still might have previous env vars
     // set, so we need to remove them
     let current = std::env::var("QWER_CURRENT").ok();
-    // Nothing was set. Clear all vars preemptively and return.
+
+    // Nothing was set
     if current.is_none() {
-        clear_state();
         return;
     }
 
@@ -77,21 +86,20 @@ fn revert_current_env() {
 
     let current_path = std::env::var("PATH").unwrap_or_default();
     let filtered_path = current_path
-        .split(":")
+        .split(':')
         .filter(|entry| !current.path.contains(*entry))
         .collect::<Vec<_>>()
         .join(":");
 
-    std::env::set_var("PATH", filtered_path);
+    shell.set(state, "PATH", &filtered_path);
 
     // TODO: Restore old vars
-    clear_state();
 }
 
-fn clear_state() {
-    std::env::remove_var("QWER_STATE");
-    std::env::remove_var("QWER_PREV");
-    std::env::remove_var("QWER_CURRENT");
+fn clear_state_vars(shell: &dyn Shell, state: &mut ShellState) {
+    shell.unset(state, "QWER_STATE");
+    shell.unset(state, "QWER_PREV");
+    shell.unset(state, "QWER_CURRENT");
 }
 
 fn get_current_env() -> Result<Option<Env>> {
@@ -112,23 +120,18 @@ fn get_current_env() -> Result<Option<Env>> {
 
     for (plugin, version_opts) in versions.iter() {
         trace!("Finding version for plugin `{plugin}`, options: `{version_opts:?}`");
-        let install_dir = installs_dir.join(&plugin);
-        let found = version_opts.iter().find_map(|version| {
-            let path = install_dir.join(version.version_str());
-            if path.is_dir() {
-                trace!("Version `{version:?}` found at `{path:?}`");
-                Some(version)
-            } else {
-                None
-            }
-        });
+        let install_dir = installs_dir.join(plugin);
+        let found = version_opts
+            .iter()
+            .find(|version| install_dir.join(version.version_str()).is_dir());
 
         if found.is_none() {
             trace!("No version found for `{plugin}`");
             continue;
         }
 
-        let scripts = get_plugin_scripts(&plugin)?;
+        trace!("Version `{found:?}` found");
+        let scripts = get_plugin_scripts(plugin)?;
         let version = found.unwrap();
         env.merge(scripts.get_env(version)?);
     }

@@ -8,7 +8,6 @@ pub fn all_installed() -> Result<()> {
     let install_dir = get_dir(INSTALLS_DIR)?;
 
     let entries = fs::read_dir(&install_dir)?
-        .map(|entry| entry)
         .collect::<Result<Vec<DirEntry>, std::io::Error>>()?
         .iter()
         .map(|entry| entry.file_name().to_string_lossy().to_string())
@@ -29,7 +28,7 @@ pub fn all_installed() -> Result<()> {
         for version in installed {
             println!("  {version}");
         }
-        print!("\n");
+        println!();
     }
 
     Ok(())
@@ -51,7 +50,6 @@ fn get_installed_versions(name: &str, filter: Option<String>) -> Result<Vec<Stri
     }
 
     let entries = fs::read_dir(&install_dir)?
-        .map(|entry| entry)
         .collect::<Result<Vec<DirEntry>, std::io::Error>>()?
         .iter()
         .map(|entry| entry.file_name().to_string_lossy().to_string())

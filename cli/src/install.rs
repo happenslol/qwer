@@ -14,13 +14,13 @@ pub fn install_all() -> Result<()> {
     to_install.sort_by_key(|(version, _)| version.to_owned());
 
     for (plugin, version) in to_install {
-        let scripts = get_plugin_scripts(&plugin)?;
-        if scripts.version_installed(&version) {
+        let scripts = get_plugin_scripts(plugin)?;
+        if scripts.version_installed(version) {
             info!("{} {} already installed", &plugin, version.raw());
             continue;
         }
 
-        install(&plugin, &version.raw())?;
+        install(plugin, &version.raw())?;
     }
 
     Ok(())
@@ -65,7 +65,7 @@ pub fn install_one_version(name: String, version: String) -> Result<()> {
 }
 
 fn install(name: &str, version: &str) -> Result<()> {
-    let scripts = get_plugin_scripts(&name)?;
+    let scripts = get_plugin_scripts(name)?;
     let resolved = scripts.resolve(version)?;
     info!("Resolved {} to {}", version, resolved.raw());
 

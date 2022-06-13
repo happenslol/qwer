@@ -57,12 +57,12 @@ pub fn shell(name: String, version: String) -> Result<()> {
 
     let current_path = std::env::var("PATH").unwrap_or_default();
     let path = env
-            .path
-            .iter()
-            .filter(|entry| !current_path.contains(*entry))
-            .map(|it| it.to_owned())
-            .collect::<Vec<_>>()
-            .join(":");
+        .path
+        .iter()
+        .filter(|entry| !current_path.contains(*entry))
+        .map(|it| it.to_owned())
+        .collect::<Vec<_>>()
+        .join(":");
 
     std::env::set_var("PATH", current_path + ":" + &path);
 

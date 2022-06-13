@@ -33,7 +33,7 @@ pub fn _get_global_tool_versions() -> Result<PathBuf> {
 
 pub fn get_plugin_scripts(name: &str) -> Result<PluginScripts> {
     let result = PluginScripts::new(
-        &name,
+        name,
         &get_dir(PLUGINS_DIR)?,
         &get_dir(INSTALLS_DIR)?,
         &get_dir(DOWNLOADS_DIR)?,
