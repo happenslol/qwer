@@ -73,12 +73,15 @@ fn apply_target_env(shell: &dyn Shell, state: &mut ShellState, target_env: &Env)
         let target_path = target_env
             .path
             .iter()
+            .filter(|entry| !current_path.contains(*entry))
             .cloned()
             .collect::<Vec<_>>()
             .join(":");
 
-        trace!("Adding to path: {:?}", target_env.path);
-        shell.set(state, "PATH", &format!("{target_path}:{current_path}"));
+        if !target_path.is_empty() {
+            trace!("Adding to path: {:?}", target_env.path);
+            shell.set(state, "PATH", &format!("{target_path}:{current_path}"));
+        }
     }
 }
 
