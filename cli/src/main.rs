@@ -5,8 +5,6 @@ use clap::{Parser, Subcommand};
 use console::style;
 use qwer::Shell;
 
-use crate::env::get_current_env;
-
 mod dirs;
 mod env;
 mod help;
@@ -30,10 +28,7 @@ enum Commands {
         shell: ShellOptions,
     },
 
-    Export {
-        #[clap(subcommand)]
-        shell: ShellOptions,
-    },
+    Export,
 
     Plugin {
         #[clap(subcommand)]
@@ -160,13 +155,6 @@ impl ShellOptions {
         }
     }
 
-    fn export(&self, env: &qwer::Env) -> String {
-        match self {
-            ShellOptions::Bash => qwer::shell::Bash::export(env),
-            ShellOptions::Zsh => qwer::shell::Zsh::export(env),
-        }
-    }
-
     fn name(&self) -> &'static str {
         match self {
             ShellOptions::Bash => "bash",
@@ -210,14 +198,7 @@ fn main() -> Result<()> {
 
             Ok(())
         }
-        Commands::Export { shell } => {
-            if let Some(env) = get_current_env()? {
-                let export = shell.export(&env);
-                print!("{export}");
-            }
-
-            Ok(())
-        }
+        Commands::Export => env::update_env(),
         Commands::Plugin { command } => match command {
             PluginCommand::Add { name, git_url } => plugin::add(name, git_url),
             PluginCommand::List {

@@ -9,11 +9,10 @@ use log::trace;
 use regex::Regex;
 use thiserror::Error;
 
-use crate::{versions::Version, Env};
+use crate::{versions::Version, env::{Env, IGNORED_ENV_VARS}};
 
 lazy_static! {
     static ref LATEST_STABLE_RE: Regex = Regex::new("-src|-dev|-latest|-stm|[-\\.]rc|-alpha|-beta|[-\\.]pre|-next|(a|b|c)[0-9]+|snapshot|master").unwrap();
-    static ref IGNORED_ENV_VARS: HashSet<&'static str> = HashSet::from_iter(["SHLVL", "PATH"]);
 }
 
 #[derive(Error, Debug)]
@@ -530,10 +529,10 @@ impl PluginScripts {
             // Check if there's a bin folder in our install
             let maybe_bin_path = version_path.join("bin");
             if maybe_bin_path.is_dir() {
-                env.path.push(maybe_bin_path.to_string_lossy().to_string());
+                env.path.insert(maybe_bin_path.to_string_lossy().to_string());
             } else {
                 // Just add the install folder
-                env.path.push(maybe_bin_path.to_string_lossy().to_string());
+                env.path.insert(maybe_bin_path.to_string_lossy().to_string());
             }
         }
 
