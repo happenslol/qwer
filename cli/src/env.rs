@@ -41,15 +41,31 @@ fn apply_target_env(shell: &dyn Shell, state: &mut ShellState, target_env: &Env)
     revert_current_env(shell, state);
     let target_env_str = target_env.serialize();
 
-    // TODO: Store previous env here
-    trace!("Setting state to {target_env_hash}");
-    shell.set(state, "QWER_STATE", &target_env_hash);
-    trace!("Setting serialized current env");
-    shell.set(state, "QWER_CURRENT", &target_env_str);
-
+    let mut stored_env = Env::default();
     for (key, val) in &target_env.vars {
         trace!("Setting {key} to {val}");
         shell.set(state, key, val);
+
+        if let Ok(store_value) = std::env::var(key) {
+            if store_value != *val {
+                stored_env.vars.insert(key.clone(), store_value);
+            }
+        }
+    }
+
+    trace!("Setting state to {target_env_hash}");
+    shell.set(state, "QWER_STATE", &target_env_hash);
+    trace!("Setting serialized current env");
+    // TODO: We don't actually need the values here. Maybe there
+    // should be a different format that only stores keys?
+    shell.set(state, "QWER_CURRENT", &target_env_str);
+
+    if !stored_env.vars.is_empty() {
+        trace!("Storing changed env values");
+        shell.set(state, "QWER_PREV", &stored_env.serialize())
+    } else {
+        trace!("No env values to store");
+        shell.unset(state, "QWER_PREV")
     }
 
     if !target_env.path.is_empty() {
@@ -81,7 +97,7 @@ fn revert_current_env(shell: &dyn Shell, state: &mut ShellState) {
     // Unset the current vars
     let current = Env::deserialize(&current.unwrap()).unwrap_or_default();
     for key in current.vars.keys() {
-        std::env::remove_var(key);
+        shell.unset(state, key);
     }
 
     let current_path = std::env::var("PATH").unwrap_or_default();
@@ -94,6 +110,14 @@ fn revert_current_env(shell: &dyn Shell, state: &mut ShellState) {
     shell.set(state, "PATH", &filtered_path);
 
     // TODO: Restore old vars
+    if let Ok(prev_env) = std::env::var("QWER_PREV") {
+        if let Ok(prev_env) = Env::deserialize(&prev_env) {
+            for (key, val) in &prev_env.vars {
+                trace!("Restoring var {key}");
+                shell.set(state, key, val);
+            }
+        }
+    }
 }
 
 fn clear_state_vars(shell: &dyn Shell, state: &mut ShellState) {

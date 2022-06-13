@@ -180,7 +180,7 @@ impl Versions {
 
         versions_file_paths
             .iter()
-            .map(|path| fs::read_to_string(path))
+            .map(fs::read_to_string)
             .collect::<Result<Vec<_>, _>>()?
             .iter()
             .map(|content| Self::parse(content))
