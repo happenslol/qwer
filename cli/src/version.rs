@@ -1,7 +1,10 @@
 use std::path::PathBuf;
 
 use anyhow::{anyhow, bail, Result};
-use qwer::versions::Versions;
+use qwer::{
+    shell::{Bash, Shell, ShellState},
+    versions::Versions,
+};
 
 use crate::dirs::{get_plugin_scripts, TOOL_VERSIONS};
 
@@ -51,20 +54,21 @@ pub fn shell(name: String, version: String) -> Result<()> {
     }
 
     let env = scripts.get_env(&version)?;
-    for (key, val) in env.vars {
-        std::env::set_var(key, val);
+    let mut state = ShellState::new();
+
+    for (key, val) in &env.vars {
+        Bash.set(&mut state, key, val);
     }
 
     let current_path = std::env::var("PATH").unwrap_or_default();
-    let path = env
-        .path
-        .iter()
-        .filter(|entry| !current_path.contains(*entry))
-        .map(|it| it.to_owned())
-        .collect::<Vec<_>>()
-        .join(":");
+    if !env.path.is_empty() {
+        let path = env.path.iter().cloned().collect::<Vec<_>>().join(":");
+        let new_path = format!("{path}:{current_path}");
+        Bash.set(&mut state, "PATH", &new_path);
+    }
 
-    std::env::set_var("PATH", current_path + ":" + &path);
+    let set_env = state.build();
+    print!("#!/bin/env bash\n{set_env}");
 
     Ok(())
 }
