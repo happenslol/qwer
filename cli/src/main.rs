@@ -3,6 +3,7 @@ use std::io::Write;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use console::style;
+use log::trace;
 use qwer::shell::Shell;
 
 mod dirs;
@@ -186,6 +187,7 @@ fn main() -> Result<()> {
 
     match Cli::parse().command {
         Commands::Hook { shell } => {
+            trace!("Running {} hook", shell.name());
             let self_path = std::env::args()
                 .next()
                 .expect("Failed to get executable path");
@@ -199,6 +201,7 @@ fn main() -> Result<()> {
             Ok(())
         }
         Commands::Export { shell } => {
+            trace!("Exporting {} env", shell.name());
             let set_env = env::update_env(shell.get())?;
             print!("{set_env}");
 

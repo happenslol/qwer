@@ -27,7 +27,7 @@ fn apply_target_env(shell: &dyn Shell, state: &mut ShellState, target_env: &Env)
     let current_env_hash = std::env::var("QWER_STATE").ok();
     let changed = current_env_hash
         .as_ref()
-        .map(|hash| hash == &target_env_hash)
+        .map(|hash| *hash != target_env_hash)
         .unwrap_or(true);
 
     trace!("Comparing current env `{target_env_hash}` to target env `{current_env_hash:?}`");

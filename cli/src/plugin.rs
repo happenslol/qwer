@@ -6,7 +6,7 @@ use log::{info, trace};
 use qwer::plugins::parse_short_repo_url;
 use tabled::{object::Segment, Alignment, Modify, Table, Tabled};
 
-use crate::dirs::{get_dir, get_plugin_scripts, PLUGINS_DIR, REGISTRIES_DIR};
+use crate::dirs::{get_dir, get_plugin_scripts, PLUGINS_DIR, REGISTRIES_DIR, INSTALLS_DIR};
 
 const DEFAULT_PLUGIN_REGISTRY_URL: &str = "https://github.com/asdf-vm/asdf-plugins.git";
 const DEFAULT_PLUGIN_REGISTRY: &str = "default";
@@ -208,6 +208,7 @@ pub fn remove(name: String) -> Result<()> {
     scripts.pre_plugin_remove()?;
 
     fs::remove_dir_all(remove_plugin_dir)?;
+    fs::remove_dir_all(get_dir(INSTALLS_DIR)?.join(&name))?;
 
     Ok(())
 }
