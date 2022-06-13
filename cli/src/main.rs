@@ -57,10 +57,6 @@ enum Commands {
         version: Option<String>,
     },
 
-    Which {
-        executable: String,
-    },
-
     Latest {
         name: String,
         filter: Option<String>,
@@ -238,7 +234,6 @@ fn main() -> Result<()> {
         Commands::Uninstall { name, version } => install::uninstall(name, version),
         Commands::Current { .. } => todo!(),
         Commands::Where { .. } => todo!(),
-        Commands::Which { .. } => todo!(),
         Commands::Latest { name, filter } => list::latest(name, filter),
         Commands::List {
             command,
