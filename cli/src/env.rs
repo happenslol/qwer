@@ -1,30 +1,30 @@
 use anyhow::Result;
 use log::trace;
-use qwer::{
-    env::Env,
-    shell::{Shell, ShellState},
-    versions::Versions,
-};
+use qwer::{env::Env, shell::ShellState, versions::Versions};
 
 use crate::dirs::{get_dir, get_plugin_scripts, INSTALLS_DIR, TOOL_VERSIONS};
 
-pub fn update_env(shell: &dyn Shell) -> Result<String> {
+const QWER_STATE: &str = "QWER_STATE";
+const QWER_PREV: &str = "QWER_PREV";
+const QWER_CURRENT: &str = "QWER_CURRENT";
+
+pub fn update_env() -> Result<ShellState> {
     let mut state = ShellState::new();
 
-    match get_current_env()? {
-        Some(target_env) => apply_target_env(shell, &mut state, &target_env),
+    match get_target_env()? {
+        Some(target_env) => apply_target_env(&mut state, &target_env),
         None => {
-            revert_current_env(shell, &mut state);
-            clear_state_vars(shell, &mut state);
+            revert_current_env(&mut state);
+            clear_state_vars(&mut state);
         }
     }
 
-    Ok(state.build())
+    Ok(state)
 }
 
-fn apply_target_env(shell: &dyn Shell, state: &mut ShellState, target_env: &Env) {
+fn apply_target_env(state: &mut ShellState, target_env: &Env) {
     let target_env_hash = format!("{}", target_env.hash());
-    let current_env_hash = std::env::var("QWER_STATE").ok();
+    let current_env_hash = std::env::var(QWER_STATE).ok();
     let changed = current_env_hash
         .as_ref()
         .map(|hash| *hash != target_env_hash)
@@ -38,13 +38,13 @@ fn apply_target_env(shell: &dyn Shell, state: &mut ShellState, target_env: &Env)
     }
 
     // Env was changed, update it
-    revert_current_env(shell, state);
+    revert_current_env(state);
     let target_env_str = target_env.serialize();
 
     let mut stored_env = Env::default();
     for (key, val) in &target_env.vars {
         trace!("Setting {key} to {val}");
-        shell.set(state, key, val);
+        state.set(key, val);
 
         if let Ok(store_value) = std::env::var(key) {
             if store_value != *val {
@@ -53,83 +53,58 @@ fn apply_target_env(shell: &dyn Shell, state: &mut ShellState, target_env: &Env)
         }
     }
 
+    state.set(QWER_STATE, &target_env_hash);
     trace!("Setting state to {target_env_hash}");
-    shell.set(state, "QWER_STATE", &target_env_hash);
-    trace!("Setting serialized current env");
+
     // TODO: We don't actually need the values here. Maybe there
     // should be a different format that only stores keys?
-    shell.set(state, "QWER_CURRENT", &target_env_str);
+    state.set(QWER_CURRENT, &target_env_str);
+    trace!("Setting serialized current env");
 
     if !stored_env.vars.is_empty() {
         trace!("Storing changed env values");
-        shell.set(state, "QWER_PREV", &stored_env.serialize())
+        state.set(QWER_PREV, &stored_env.serialize())
     } else {
         trace!("No env values to store");
-        shell.unset(state, "QWER_PREV")
+        state.unset(QWER_PREV)
     }
 
-    if !target_env.path.is_empty() {
-        let current_path = std::env::var("PATH").unwrap_or_default();
-        let target_path = target_env
-            .path
-            .iter()
-            .filter(|entry| !current_path.contains(*entry))
-            .cloned()
-            .collect::<Vec<_>>()
-            .join(":");
-
-        if !target_path.is_empty() {
-            trace!("Adding to path: {:?}", target_env.path);
-            shell.set(state, "PATH", &format!("{target_path}:{current_path}"));
-        }
+    for entry in &target_env.path {
+        state.add_path(entry);
     }
 }
 
-fn revert_current_env(shell: &dyn Shell, state: &mut ShellState) {
+fn revert_current_env(state: &mut ShellState) {
     trace!("Reverting current env");
 
     // We still might have previous env vars
     // set, so we need to remove them
-    let current = std::env::var("QWER_CURRENT").ok();
+    let current = std::env::var(QWER_CURRENT).ok();
 
     // Nothing was set
     if current.is_none() {
+        trace!("No current env found");
         return;
     }
 
     // Unset the current vars
     let current = Env::deserialize(&current.unwrap()).unwrap_or_default();
-    for key in current.vars.keys() {
-        shell.unset(state, key);
-    }
+    state.revert(&current);
 
-    let current_path = std::env::var("PATH").unwrap_or_default();
-    let filtered_path = current_path
-        .split(':')
-        .filter(|entry| !current.path.contains(*entry))
-        .collect::<Vec<_>>()
-        .join(":");
-
-    shell.set(state, "PATH", &filtered_path);
-
-    // TODO: Restore old vars
-    if let Ok(prev_env) = std::env::var("QWER_PREV") {
+    if let Ok(prev_env) = std::env::var(QWER_PREV) {
         if let Ok(prev_env) = Env::deserialize(&prev_env) {
-            for (key, val) in &prev_env.vars {
-                trace!("Restoring var {key}");
-                shell.set(state, key, val);
-            }
+            state.apply(&prev_env);
         }
     }
 }
 
-fn clear_state_vars(shell: &dyn Shell, state: &mut ShellState) {
-    shell.unset(state, "QWER_STATE");
-    shell.unset(state, "QWER_PREV");
-    shell.unset(state, "QWER_CURRENT");
+fn clear_state_vars(state: &mut ShellState) {
+    state.unset(QWER_STATE);
+    state.unset(QWER_PREV);
+    state.unset(QWER_CURRENT);
 }
 
-fn get_current_env() -> Result<Option<Env>> {
+fn get_target_env() -> Result<Option<Env>> {
     trace!("Getting current env");
     let versions_files = Versions::find_all(std::env::current_dir()?, TOOL_VERSIONS)?;
     if versions_files.is_empty() {

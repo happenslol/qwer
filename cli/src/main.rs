@@ -202,7 +202,9 @@ fn main() -> Result<()> {
         }
         Commands::Export { shell } => {
             trace!("Exporting {} env", shell.name());
-            let set_env = env::update_env(shell.get())?;
+            let state = env::update_env()?;
+            let set_env = shell.get().apply(&state);
+
             trace!("Resolved env export:\n{set_env}");
             print!("{set_env}");
 

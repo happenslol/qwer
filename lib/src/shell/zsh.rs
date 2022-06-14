@@ -22,14 +22,6 @@ fi"#
 
         result
     }
-
-    fn set(&self, state: &mut super::ShellState, var: &str, value: &str) {
-        state.append(&format!("export {var}={value};"));
-    }
-
-    fn unset(&self, state: &mut super::ShellState, var: &str) {
-        state.append(&format!("unset {var};"));
-    }
 }
 
 #[cfg(test)]

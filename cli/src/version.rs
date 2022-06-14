@@ -57,17 +57,14 @@ pub fn shell(name: String, version: String) -> Result<()> {
     let mut state = ShellState::new();
 
     for (key, val) in &env.vars {
-        Bash.set(&mut state, key, val);
+        state.set(key, val);
     }
 
-    let current_path = std::env::var("PATH").unwrap_or_default();
-    if !env.path.is_empty() {
-        let path = env.path.iter().cloned().collect::<Vec<_>>().join(":");
-        let new_path = format!("{path}:{current_path}");
-        Bash.set(&mut state, "PATH", &new_path);
+    for entry in &env.path {
+        state.add_path(entry);
     }
 
-    let set_env = state.build();
+    let set_env = Bash.apply(&state);
     print!("#!/bin/env bash\n{set_env}");
 
     Ok(())
