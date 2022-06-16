@@ -1,6 +1,10 @@
-use std::io::Write;
+use std::{
+    io::Write,
+    path::{Path, PathBuf},
+};
 
-use anyhow::Result;
+use crate::dirs::{get_dir, BIN_DIR};
+use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use console::style;
 use log::trace;
@@ -93,6 +97,11 @@ enum Commands {
         plugin: Option<String>,
         version: Option<String>,
     },
+
+    // Legacy commands
+    Reshim {
+        args: Vec<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -166,6 +175,23 @@ impl ShellOptions {
     }
 }
 
+fn ensure_asdf_alias(self_path: &Path) -> Result<()> {
+    let asdf_bin = get_dir(BIN_DIR)?.join("asdf");
+    if !asdf_bin.is_symlink() {
+        std::os::unix::fs::symlink(self_path, asdf_bin)?;
+    }
+
+    Ok(())
+}
+
+fn assert_running_qwer(is_running_asdf_alias: bool) -> Result<()> {
+    if !is_running_asdf_alias {
+        bail!("This command can not be run from an asdf symlink");
+    }
+
+    Ok(())
+}
+
 fn main() -> Result<()> {
     env_logger::Builder::new()
         .target(env_logger::Target::Stderr)
@@ -188,12 +214,27 @@ fn main() -> Result<()> {
         })
         .init();
 
+    let mut self_path = std::env::args()
+        .next()
+        .context("Failed to get executable path")?;
+
+    let is_asdf = self_path == "asdf";
+    if !is_asdf {
+        trace!("Running as qwer");
+        let self_path_canon = PathBuf::from(self_path)
+            .canonicalize()
+            .context("Failed to canonicalize self path")?;
+
+        ensure_asdf_alias(self_path_canon.as_path()).context("Failed to ensure asdf alias")?;
+        self_path = self_path_canon.to_string_lossy().to_string();
+    } else {
+        trace!("Running as asdf");
+    }
+
     match Cli::parse().command {
         Commands::Hook { shell } => {
             trace!("Running {} hook", shell.name());
-            let self_path = std::env::args()
-                .next()
-                .expect("Failed to get executable path");
+            assert_running_qwer(is_asdf)?;
 
             let shell_name = shell.name();
             let shell_fns = shell.get();
@@ -205,6 +246,8 @@ fn main() -> Result<()> {
         }
         Commands::Export { shell } => {
             trace!("Exporting {} env", shell.name());
+            assert_running_qwer(is_asdf)?;
+
             let state = env::update_env()?;
             let set_env = shell.get().apply(&state);
 
@@ -262,5 +305,9 @@ fn main() -> Result<()> {
         Commands::Local { name, version } => version::local(name, version),
         Commands::Shell { name, version } => version::shell(name, version),
         Commands::Help { plugin, version } => help::help(plugin, version),
+        Commands::Reshim { args } => {
+            trace!("Skipping legacy command `reshim` ({args:?})");
+            Ok(())
+        }
     }
 }

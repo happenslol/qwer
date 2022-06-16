@@ -7,6 +7,7 @@ pub const REGISTRIES_DIR: &str = "registries";
 pub const PLUGINS_DIR: &str = "plugins";
 pub const INSTALLS_DIR: &str = "installs";
 pub const DOWNLOADS_DIR: &str = "downloads";
+pub const BIN_DIR: &str = "bin";
 
 pub const TOOL_VERSIONS: &str = ".tool-versions";
 
@@ -37,6 +38,7 @@ pub fn get_plugin_scripts(name: &str) -> Result<PluginScripts> {
         &get_dir(PLUGINS_DIR)?,
         &get_dir(INSTALLS_DIR)?,
         &get_dir(DOWNLOADS_DIR)?,
+        &[&get_dir(BIN_DIR)?.to_string_lossy()],
     )?;
 
     if !result.plugin_installed() {

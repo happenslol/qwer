@@ -60,7 +60,11 @@ fn gather_versions() -> Result<HashMap<String, Version>> {
     Ok(result)
 }
 
-pub fn install_one_version(name: String, version: String, concurrency: Option<usize>) -> Result<()> {
+pub fn install_one_version(
+    name: String,
+    version: String,
+    concurrency: Option<usize>,
+) -> Result<()> {
     install(&name, &version, concurrency)
 }
 
@@ -77,13 +81,11 @@ fn install(name: &str, version: &str, concurrency: Option<usize>) -> Result<()> 
 
     if scripts.has_download() {
         info!("Running download script...");
-        let download_output = scripts.download(&resolved)?;
-        trace!("Download output:\n{download_output}");
+        let _download_output = scripts.download(&resolved)?;
     }
 
     info!("Running install script...");
-    let install_output = scripts.install(&resolved, concurrency)?;
-    trace!("Install output:\n{install_output}");
+    let _install_output = scripts.install(&resolved, concurrency)?;
 
     info!("Installed {} {}", &name, resolved.raw());
 

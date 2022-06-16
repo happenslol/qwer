@@ -232,8 +232,8 @@ pub fn update(name: String, git_ref: Option<String>) -> Result<()> {
         repo.update_to_remote_head()?;
     }
 
-    let post = repo.get_head_ref()?;
     let scripts = get_plugin_scripts(&name)?;
+    let post = repo.get_head_ref()?;
     scripts.post_plugin_update(&prev, &post)?;
 
     Ok(())

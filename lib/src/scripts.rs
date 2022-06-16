@@ -1,6 +1,7 @@
 use std::{
     collections::HashSet,
     fs,
+    os::unix::prelude::PermissionsExt,
     path::{Path, PathBuf},
 };
 
@@ -16,6 +17,7 @@ use crate::{
 
 lazy_static! {
     static ref LATEST_STABLE_RE: Regex = Regex::new("-src|-dev|-latest|-stm|[-\\.]rc|-alpha|-beta|[-\\.]pre|-next|(a|b|c)[0-9]+|snapshot|master").unwrap();
+    static ref EXPORT_ECHO_RE: Regex = Regex::new("export ").unwrap();
 }
 
 const ASDF_INSTALL_TYPE: &str = "ASDF_INSTALL_TYPE";
@@ -60,6 +62,7 @@ pub struct PluginScripts {
     plugin_dir: PathBuf,
     install_dir: PathBuf,
     download_dir: PathBuf,
+    script_env_path: String,
 }
 
 impl PluginScripts {
@@ -68,6 +71,7 @@ impl PluginScripts {
         plugins: Plugin,
         installs: Install,
         downloads: Download,
+        extra_path: &[&str],
     ) -> Result<Self, PluginScriptError>
     where
         Plugin: AsRef<Path>,
@@ -79,11 +83,23 @@ impl PluginScripts {
         let download_dir = downloads.as_ref().join(name);
         let name = name.to_owned();
 
+        let mut script_env_path = extra_path
+            .iter()
+            .map(|entry| entry.to_string())
+            .collect::<Vec<String>>();
+
+        if let Ok(current_path) = std::env::var("PATH") {
+            script_env_path.push(current_path);
+        }
+
+        let script_env_path = script_env_path.join(":");
+
         Ok(Self {
             name,
             plugin_dir,
             install_dir,
             download_dir,
+            script_env_path,
         })
     }
 
@@ -99,6 +115,8 @@ impl PluginScripts {
         }
 
         let mut expr = duct::cmd!(script.as_ref())
+            .env("PATH", &self.script_env_path)
+            .env("QWER_LOG", "trace")
             .stderr_to_stdout()
             .stdout_capture()
             .unchecked();
@@ -385,11 +403,14 @@ impl PluginScripts {
         }
 
         let version_dir = self.install_dir.join(version.version_str());
-        let output = duct::cmd!(script_path)
-            .env(ASDF_INSTALL_TYPE, version.install_type())
-            .env(ASDF_INSTALL_VERSION, &version.raw())
-            .env(ASDF_INSTALL_PATH, &*version_dir.to_string_lossy())
-            .read()?;
+        let output = self.run_script(
+            &script_path,
+            &[
+                (ASDF_INSTALL_TYPE, version.install_type()),
+                (ASDF_INSTALL_VERSION, &version.raw()),
+                (ASDF_INSTALL_PATH, &*version_dir.to_string_lossy()),
+            ],
+        )?;
 
         Ok(output
             .trim()
@@ -400,7 +421,60 @@ impl PluginScripts {
 
     // Env modification
 
-    pub fn exec_env(
+    pub fn exec_env_echo(
+        &self,
+        version: &Version,
+    ) -> Result<Option<Vec<(String, String)>>, PluginScriptError> {
+        // TODO: Do we need to support adding to path entries here?
+
+        let version_dir = self.install_dir.join(version.version_str());
+        let exec_path = self.plugin_dir.join("bin/exec-env");
+        if !exec_path.is_file() {
+            return Ok(None);
+        }
+
+        // This is an alternative version of printing the env, which should
+        // be faster since it doesn't need to diff the entire env.
+        // By replacing every instance of `export` with `echo`, we make
+        // the script output the paths that should be added.
+        // This might be less accurate and might not capture everything since
+        // the script can source another script that exports vars.
+        let exec_echo_path = self.plugin_dir.join("bin/exec-env-echo");
+        if !exec_echo_path.is_file() {
+            trace!("Generating exec-env-echo script");
+            let script_contents = fs::read_to_string(&exec_path)?;
+            let echo_script = EXPORT_ECHO_RE.replace_all(&script_contents, "echo ");
+
+            trace!("Wrote exec-env-echo script:\n{echo_script}");
+            fs::write(&exec_echo_path, echo_script.as_bytes())?;
+
+            // Make the new script executable
+            fs::set_permissions(&exec_echo_path, PermissionsExt::from_mode(0o0755))?;
+        }
+
+        let output = self.run_script(
+            &exec_echo_path,
+            &[
+                (ASDF_INSTALL_TYPE, version.install_type()),
+                (ASDF_INSTALL_VERSION, &version.raw()),
+                (ASDF_INSTALL_PATH, &*version_dir.to_string_lossy()),
+            ],
+        )?;
+
+        let parts = output
+            .split('\n')
+            .filter_map(|line| line.split_once('='))
+            .map(|(key, val)| (key.to_owned(), val.to_owned()))
+            .collect::<Vec<_>>();
+
+        if !parts.is_empty() {
+            Ok(Some(parts))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn exec_env_diff(
         &self,
         version: &Version,
     ) -> Result<Option<Vec<(String, String)>>, PluginScriptError> {
@@ -409,7 +483,6 @@ impl PluginScripts {
         // This is pretty stupid, but there's no way for us to know
         // what vars are being changed unless we actually run the script
         // and compare the env before and after.
-        // Surely, there must be a better way to do this...
         let version_dir = self.install_dir.join(version.version_str());
         let exec_path = self.plugin_dir.join("bin/exec-env");
         if !exec_path.is_file() {
@@ -421,7 +494,7 @@ impl PluginScripts {
         // No matter what the script outputs, this will always work since
         // env will always print one line per env var, and escape characters itself.
         let run_str = format!(
-            r#"env;echo;{}={} {}={} ={} {}. "{}";echo;env;"#,
+            r#"env;echo;{}={} {}={} {}={} . "{}";echo;env;"#,
             ASDF_INSTALL_TYPE,
             ASDF_INSTALL_VERSION,
             ASDF_INSTALL_PATH,
@@ -431,7 +504,10 @@ impl PluginScripts {
             exec_path.to_string_lossy(),
         );
 
-        let output = duct::cmd!("bash", "-c", &run_str).read()?;
+        let output = duct::cmd!("bash", "-c", &run_str)
+            .env("PATH", &self.script_env_path)
+            .read()?;
+
         let mut parts = output.split("\n\n");
         let env_before = parts
             .next()
@@ -534,7 +610,7 @@ impl PluginScripts {
         let mut env = Env::default();
 
         // first, see if there's an exec-env
-        if let Some(exec_env) = self.exec_env(version)? {
+        if let Some(exec_env) = self.exec_env_echo(version)? {
             env.vars.extend(exec_env);
         }
 

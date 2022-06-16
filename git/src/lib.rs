@@ -107,6 +107,7 @@ impl GitRepo {
             rref,
             "--force",
         ])?;
+
         Ok(())
     }
 
