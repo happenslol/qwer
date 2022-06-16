@@ -49,6 +49,9 @@ enum Commands {
 
         #[clap(long, short)]
         concurrency: Option<usize>,
+
+        #[clap(long, short)]
+        keep_download: bool,
     },
 
     Uninstall {
@@ -281,10 +284,13 @@ fn main() -> Result<()> {
             name,
             version,
             concurrency,
+            keep_download,
         } => match (name, version) {
-            (None, None) => install::install_all(concurrency),
-            (Some(name), None) => install::install_one(name, concurrency),
-            (Some(name), Some(version)) => install::install_one_version(name, version, concurrency),
+            (None, None) => install::install_all(concurrency, keep_download),
+            (Some(name), None) => install::install_one(name, concurrency, keep_download),
+            (Some(name), Some(version)) => {
+                install::install_one_version(name, version, concurrency, keep_download)
+            }
             _ => unreachable!(),
         },
         Commands::Uninstall { name, version } => install::uninstall(name, version),

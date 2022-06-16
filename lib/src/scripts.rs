@@ -281,12 +281,9 @@ impl PluginScripts {
                 (ASDF_INSTALL_VERSION, version_str),
                 (ASDF_INSTALL_PATH, &version_install_dir.to_string_lossy()),
                 (ASDF_DOWNLOAD_PATH, &version_download_dir.to_string_lossy()),
-                // TODO: Use num threads by default or accept config
                 (ASDF_CONCURRENCY, &concurrency.to_string()),
             ],
         )?;
-
-        // TODO: Allow cleaning download dir
 
         Ok(output)
     }
@@ -302,6 +299,15 @@ impl PluginScripts {
         }
 
         Ok(fs::remove_dir_all(&version_dir)?)
+    }
+
+    pub fn rm_version_download(&self, version: &Version) -> Result<(), PluginScriptError> {
+        let dl_dir = self.download_dir.join(version.version_str());
+        if !dl_dir.is_dir() {
+            return Ok(());
+        }
+
+        Ok(fs::remove_dir_all(&dl_dir)?)
     }
 
     pub fn uninstall(&self, version: &Version) -> Result<String, PluginScriptError> {
