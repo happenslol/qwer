@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use log::trace;
 use qwer::{
     env::Env,
@@ -60,8 +60,6 @@ fn apply_target_env(state: &mut ShellState, target_env: &Env) {
     state.set(QWER_STATE, &target_env_hash);
     trace!("Setting state to {target_env_hash}");
 
-    // TODO: We don't actually need the values here. Maybe there
-    // should be a different format that only stores keys?
     state.set(QWER_CURRENT, &target_env_str);
     trace!("Setting serialized current env");
 
@@ -155,6 +153,26 @@ pub fn current(name: String) -> Result<()> {
 }
 
 pub fn wwhere(name: String, version: Option<String>) -> Result<()> {
+    let scripts = get_plugin_scripts(&name)?;
+    if !scripts.plugin_installed() {
+        bail!("Plugin `{name}` is not installed");
+    }
+
+    let version = if let Some(version) = version {
+        scripts.resolve(&version)?
+    } else {
+        let resolved = find_current_version(&name)?;
+        if resolved.is_none() {
+            bail!("No current version set for plugin `{name}`");
+        }
+
+        resolved.unwrap()
+    };
+
+    let path = scripts.get_version_path(&version)?;
+    let canonicalized = path.canonicalize()?;
+    println!("{}", canonicalized.to_string_lossy());
+
     Ok(())
 }
 

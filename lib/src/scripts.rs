@@ -425,6 +425,18 @@ impl PluginScripts {
             .collect())
     }
 
+    pub fn get_version_path(&self, version: &Version) -> Result<PathBuf, PluginScriptError> {
+        let result = self.install_dir.join(version.raw());
+        if !result.is_dir() {
+            return Err(PluginScriptError::VersionNotInstalled {
+                plugin: self.name.clone(),
+                version: version.raw(),
+            });
+        }
+
+        Ok(result)
+    }
+
     // Env modification
 
     pub fn exec_env_echo(
@@ -607,7 +619,7 @@ impl PluginScripts {
     // Extensions
 
     pub fn extension(&self, _ext: &str) -> Result<String, PluginScriptError> {
-        Ok(String::new())
+        todo!()
     }
 
     // Helpers
