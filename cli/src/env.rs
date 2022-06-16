@@ -1,6 +1,10 @@
 use anyhow::Result;
 use log::trace;
-use qwer::{env::Env, shell::ShellState, versions::Versions};
+use qwer::{
+    env::Env,
+    shell::ShellState,
+    versions::{Version, Versions},
+};
 
 use crate::dirs::{get_dir, get_plugin_scripts, INSTALLS_DIR, TOOL_VERSIONS};
 
@@ -106,17 +110,12 @@ fn clear_state_vars(state: &mut ShellState) {
 
 fn get_target_env() -> Result<Option<Env>> {
     trace!("Getting current env");
-    let versions_files = Versions::find_all(std::env::current_dir()?, TOOL_VERSIONS)?;
-    if versions_files.is_empty() {
-        trace!("Empty versions file found");
+    let versions = get_combined_versions()?;
+    if versions.is_none() {
         return Ok(None);
     }
 
-    let mut versions = Versions::new();
-    for mut versions_file in versions_files.into_iter().rev() {
-        versions.extend(versions_file.drain());
-    }
-
+    let versions = versions.unwrap();
     let installs_dir = get_dir(INSTALLS_DIR)?;
     let mut env = Env::default();
 
@@ -143,4 +142,56 @@ fn get_target_env() -> Result<Option<Env>> {
     } else {
         Ok(Some(env))
     }
+}
+
+pub fn current(name: String) -> Result<()> {
+    if let Some(current) = find_current_version(&name)? {
+        println!("{} {}", name, current.raw());
+    } else {
+        println!("No version in use for {}", name);
+    }
+
+    Ok(())
+}
+
+pub fn wwhere(name: String, version: Option<String>) -> Result<()> {
+    Ok(())
+}
+
+fn find_current_version(name: &str) -> Result<Option<Version>> {
+    let versions = get_combined_versions()?;
+    if versions.is_none() {
+        return Ok(None);
+    }
+
+    let versions = versions.unwrap();
+    let found_plugin = versions.get(name);
+    if found_plugin.is_none() {
+        return Ok(None);
+    }
+
+    let found_plugin = found_plugin.unwrap();
+    let installs_dir = get_dir(INSTALLS_DIR)?;
+    let install_dir = installs_dir.join(name);
+
+    let found_install = found_plugin
+        .iter()
+        .find(|version| install_dir.join(version.version_str()).is_dir());
+
+    Ok(found_install.map(|found| found.to_owned()))
+}
+
+fn get_combined_versions() -> Result<Option<Versions>> {
+    let versions_files = Versions::find_all(std::env::current_dir()?, TOOL_VERSIONS)?;
+    if versions_files.is_empty() {
+        trace!("Empty versions file found");
+        return Ok(None);
+    }
+
+    let mut versions = Versions::new();
+    for mut versions_file in versions_files.into_iter().rev() {
+        versions.extend(versions_file.drain());
+    }
+
+    Ok(Some(versions))
 }

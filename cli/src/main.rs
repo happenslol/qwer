@@ -294,8 +294,8 @@ fn main() -> Result<()> {
             _ => unreachable!(),
         },
         Commands::Uninstall { name, version } => install::uninstall(name, version),
-        Commands::Current { .. } => todo!(),
-        Commands::Where { .. } => todo!(),
+        Commands::Current { name } => env::current(name),
+        Commands::Where { name, version } => env::wwhere(name, version),
         Commands::Latest { name, filter } => list::latest(name, filter),
         Commands::List {
             command,
