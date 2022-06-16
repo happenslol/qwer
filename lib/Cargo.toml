@@ -13,6 +13,7 @@ lazy_static = "1.4.0"
 base64 = "0.13.0"
 twox-hash = "1.6.3"
 snap = "1.0.5"
+num_threads = "0.1.6"
 
 [dev-dependencies]
 tempfile = "3.3.0"

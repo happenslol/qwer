@@ -6,7 +6,7 @@ use qwer::versions::{Version, Versions};
 
 use crate::dirs::{get_plugin_scripts, TOOL_VERSIONS};
 
-pub fn install_all() -> Result<()> {
+pub fn install_all(concurrency: Option<usize>) -> Result<()> {
     let to_install = gather_versions()?;
     trace!("Installing versions:\n{to_install:#?}");
 
@@ -20,13 +20,13 @@ pub fn install_all() -> Result<()> {
             continue;
         }
 
-        install(plugin, &version.raw())?;
+        install(plugin, &version.raw(), concurrency)?;
     }
 
     Ok(())
 }
 
-pub fn install_one(name: String) -> Result<()> {
+pub fn install_one(name: String, concurrency: Option<usize>) -> Result<()> {
     let versions = gather_versions()?;
     if !versions.contains_key(&name) {
         bail!("tool `{name}` is not defined in any version files");
@@ -35,7 +35,7 @@ pub fn install_one(name: String) -> Result<()> {
     let to_install = &versions[&name];
     trace!("Installing version: {name} {to_install:?}");
 
-    install(&name, &to_install.raw())
+    install(&name, &to_install.raw(), concurrency)
 }
 
 fn gather_versions() -> Result<HashMap<String, Version>> {
@@ -60,11 +60,11 @@ fn gather_versions() -> Result<HashMap<String, Version>> {
     Ok(result)
 }
 
-pub fn install_one_version(name: String, version: String) -> Result<()> {
-    install(&name, &version)
+pub fn install_one_version(name: String, version: String, concurrency: Option<usize>) -> Result<()> {
+    install(&name, &version, concurrency)
 }
 
-fn install(name: &str, version: &str) -> Result<()> {
+fn install(name: &str, version: &str, concurrency: Option<usize>) -> Result<()> {
     let scripts = get_plugin_scripts(name)?;
     let resolved = scripts.resolve(version)?;
     info!("Resolved {} to {}", version, resolved.raw());
@@ -82,7 +82,7 @@ fn install(name: &str, version: &str) -> Result<()> {
     }
 
     info!("Running install script...");
-    let install_output = scripts.install(&resolved)?;
+    let install_output = scripts.install(&resolved, concurrency)?;
     trace!("Install output:\n{install_output}");
 
     info!("Installed {} {}", &name, resolved.raw());

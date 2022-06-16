@@ -18,6 +18,16 @@ lazy_static! {
     static ref LATEST_STABLE_RE: Regex = Regex::new("-src|-dev|-latest|-stm|[-\\.]rc|-alpha|-beta|[-\\.]pre|-next|(a|b|c)[0-9]+|snapshot|master").unwrap();
 }
 
+const ASDF_INSTALL_TYPE: &str = "ASDF_INSTALL_TYPE";
+const ASDF_INSTALL_VERSION: &str = "ASDF_INSTALL_VERSION";
+const ASDF_INSTALL_PATH: &str = "ASDF_INSTALL_PATH";
+const ASDF_DOWNLOAD_PATH: &str = "ASDF_DOWNLOAD_PATH";
+const ASDF_CONCURRENCY: &str = "ASDF_CONCURRENCY";
+const ASDF_PLUGIN_PATH: &str = "ASDF_PLUGIN_PATH";
+const ASDF_PLUGIN_SOURCE_URL: &str = "ASDF_PLUGIN_SOURCE_URL";
+const ASDF_PLUGIN_PREV_REF: &str = "ASDF_PLUGIN_PREV_REF";
+const ASDF_PLUGIN_POST_REF: &str = "ASDF_PLUGIN_POST_REF";
+
 #[derive(Error, Debug)]
 pub enum PluginScriptError {
     #[error("script returned a non-0 exit code:\n{0}")]
@@ -201,20 +211,21 @@ impl PluginScripts {
         let output = self.run_script(
             &download_script,
             &[
-                ("ASDF_INSTALL_TYPE", version.install_type()),
-                ("ASDF_INSTALL_VERSION", version_str),
-                ("ASDF_INSTALL_PATH", &version_install_dir.to_string_lossy()),
-                (
-                    "ASDF_DOWNLOAD_PATH",
-                    &version_download_dir.to_string_lossy(),
-                ),
+                (ASDF_INSTALL_TYPE, version.install_type()),
+                (ASDF_INSTALL_VERSION, version_str),
+                (ASDF_INSTALL_PATH, &version_install_dir.to_string_lossy()),
+                (ASDF_DOWNLOAD_PATH, &version_download_dir.to_string_lossy()),
             ],
         )?;
 
         Ok(output)
     }
 
-    pub fn install(&self, version: &Version) -> Result<String, PluginScriptError> {
+    pub fn install(
+        &self,
+        version: &Version,
+        concurrency: Option<usize>,
+    ) -> Result<String, PluginScriptError> {
         trace!(
             "Installing version {version:?} for plugin `{:?}` to `{:?}`",
             self.plugin_dir,
@@ -241,18 +252,19 @@ impl PluginScripts {
 
         fs::create_dir_all(&version_install_dir)?;
 
+        let concurrency = concurrency
+            .or_else(|| num_threads::num_threads().map(|num| num.get()))
+            .unwrap_or(1);
+
         let output = self.run_script(
             &install_script,
             &[
-                ("ASDF_INSTALL_TYPE", version.install_type()),
-                ("ASDF_INSTALL_VERSION", version_str),
-                ("ASDF_INSTALL_PATH", &version_install_dir.to_string_lossy()),
-                (
-                    "ASDF_DOWNLOAD_PATH",
-                    &version_download_dir.to_string_lossy(),
-                ),
+                (ASDF_INSTALL_TYPE, version.install_type()),
+                (ASDF_INSTALL_VERSION, version_str),
+                (ASDF_INSTALL_PATH, &version_install_dir.to_string_lossy()),
+                (ASDF_DOWNLOAD_PATH, &version_download_dir.to_string_lossy()),
                 // TODO: Use num threads by default or accept config
-                ("ASDF_CONCURRENCY", "1"),
+                (ASDF_CONCURRENCY, &concurrency.to_string()),
             ],
         )?;
 
@@ -301,9 +313,9 @@ impl PluginScripts {
         let output = self.run_script(
             &uninstall_script,
             &[
-                ("ASDF_INSTALL_TYPE", version.install_type()),
-                ("ASDF_INSTALL_VERSION", version_str),
-                ("ASDF_INSTALL_PATH", &version_install_dir.to_string_lossy()),
+                (ASDF_INSTALL_TYPE, version.install_type()),
+                (ASDF_INSTALL_VERSION, version_str),
+                (ASDF_INSTALL_PATH, &version_install_dir.to_string_lossy()),
             ],
         )?;
 
@@ -354,8 +366,8 @@ impl PluginScripts {
 
         let mut env = vec![];
         if let Some(version) = version {
-            env.push(("ASDF_INSTALL_TYPE", version.install_type()));
-            env.push(("ASDF_INSTALL_VERSION", version.version_str()));
+            env.push((ASDF_INSTALL_TYPE, version.install_type()));
+            env.push((ASDF_INSTALL_VERSION, version.version_str()));
         }
 
         let output = self.run_script(&help_path, &env)?;
@@ -374,9 +386,9 @@ impl PluginScripts {
 
         let version_dir = self.install_dir.join(version.version_str());
         let output = duct::cmd!(script_path)
-            .env("ASDF_INSTALL_TYPE", version.install_type())
-            .env("ASDF_INSTALL_VERSION", &version.raw())
-            .env("ASDF_INSTALL_PATH", &*version_dir.to_string_lossy())
+            .env(ASDF_INSTALL_TYPE, version.install_type())
+            .env(ASDF_INSTALL_VERSION, &version.raw())
+            .env(ASDF_INSTALL_PATH, &*version_dir.to_string_lossy())
             .read()?;
 
         Ok(output
@@ -409,7 +421,10 @@ impl PluginScripts {
         // No matter what the script outputs, this will always work since
         // env will always print one line per env var, and escape characters itself.
         let run_str = format!(
-            r#"env;echo;ASDF_INSTALL_TYPE={} ASDF_INSTALL_VERSION={} ASDF_INSTALL_PATH={} . "{}";echo;env;"#,
+            r#"env;echo;{}={} {}={} ={} {}. "{}";echo;env;"#,
+            ASDF_INSTALL_TYPE,
+            ASDF_INSTALL_VERSION,
+            ASDF_INSTALL_PATH,
             version.install_type(),
             version.raw(),
             version_dir.to_string_lossy(),
@@ -470,7 +485,7 @@ impl PluginScripts {
             return Ok(());
         }
 
-        self.run_script(&path, &[("ASDF_PLUGIN_SOURCE_URL", install_url)])?;
+        self.run_script(&path, &[(ASDF_PLUGIN_SOURCE_URL, install_url)])?;
 
         Ok(())
     }
@@ -484,9 +499,9 @@ impl PluginScripts {
         self.run_script(
             &path,
             &[
-                ("ASDF_PLUGIN_PATH", &*self.plugin_dir.to_string_lossy()),
-                ("ASDF_PLUGIN_PREV_REF", prev),
-                ("ASDF_PLUGIN_POST_REF", post),
+                (ASDF_PLUGIN_PATH, &*self.plugin_dir.to_string_lossy()),
+                (ASDF_PLUGIN_PREV_REF, prev),
+                (ASDF_PLUGIN_POST_REF, post),
             ],
         )?;
 
@@ -501,7 +516,7 @@ impl PluginScripts {
 
         self.run_script(
             &path,
-            &[("ASDF_PLUGIN_PATH", &*self.plugin_dir.to_string_lossy())],
+            &[(ASDF_PLUGIN_PATH, &*self.plugin_dir.to_string_lossy())],
         )?;
 
         Ok(())

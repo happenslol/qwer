@@ -42,6 +42,9 @@ enum Commands {
     Install {
         name: Option<String>,
         version: Option<String>,
+
+        #[clap(long, short)]
+        concurrency: Option<usize>,
     },
 
     Uninstall {
@@ -231,10 +234,14 @@ fn main() -> Result<()> {
                 _ => unreachable!(),
             },
         },
-        Commands::Install { name, version } => match (name, version) {
-            (None, None) => install::install_all(),
-            (Some(name), None) => install::install_one(name),
-            (Some(name), Some(version)) => install::install_one_version(name, version),
+        Commands::Install {
+            name,
+            version,
+            concurrency,
+        } => match (name, version) {
+            (None, None) => install::install_all(concurrency),
+            (Some(name), None) => install::install_one(name, concurrency),
+            (Some(name), Some(version)) => install::install_one_version(name, version, concurrency),
             _ => unreachable!(),
         },
         Commands::Uninstall { name, version } => install::uninstall(name, version),
