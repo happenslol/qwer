@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs,
     os::unix::prelude::PermissionsExt,
     path::{Path, PathBuf},
@@ -618,8 +618,45 @@ impl PluginScripts {
 
     // Extensions
 
-    pub fn extension(&self, _ext: &str) -> Result<String, PluginScriptError> {
-        todo!()
+    pub fn list_extensions(&self) -> Result<HashMap<String, PathBuf>, PluginScriptError> {
+        let command_dir = self.plugin_dir.join("lib").join("commands");
+        if !command_dir.is_dir() {
+            return Ok(HashMap::new());
+        }
+
+        let files = fs::read_dir(&command_dir)?;
+        let mut result = HashMap::new();
+        for file in files {
+            let file = file?;
+            let filename = file.file_name().to_string_lossy().to_string();
+            let filepath = file.path();
+            let ext = filepath
+                .extension()
+                .map(|ext| ext.to_string_lossy().to_string())
+                .unwrap_or_default();
+
+            if !filename.starts_with("command") || ext != "bash" {
+                continue;
+            }
+
+            let ext_name = filename.trim_end_matches(".bash").to_owned();
+            result.insert(ext_name, filepath);
+        }
+
+        Ok(result)
+    }
+
+    pub fn extension<P: AsRef<Path>>(
+        &self,
+        ext: P,
+        args: &[&str],
+    ) -> Result<(), PluginScriptError> {
+        duct::cmd(ext.as_ref(), args)
+            .env("PATH", &self.script_env_path)
+            .env("QWER_LOG", "trace")
+            .run()?;
+
+        Ok(())
     }
 
     // Helpers

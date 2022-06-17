@@ -12,10 +12,12 @@ use qwer::shell::Shell;
 
 mod dirs;
 mod env;
+mod ext;
 mod help;
 mod install;
 mod list;
 mod plugin;
+mod util;
 mod version;
 
 #[derive(Debug, Parser)]
@@ -26,7 +28,7 @@ struct Cli {
 }
 
 #[derive(Debug, Subcommand)]
-#[clap(disable_help_subcommand(true))]
+#[clap(disable_help_subcommand(true), allow_external_subcommands(true))]
 enum Commands {
     Hook {
         #[clap(subcommand)]
@@ -105,6 +107,9 @@ enum Commands {
     Reshim {
         args: Vec<String>,
     },
+
+    #[clap(external_subcommand)]
+    Command(Vec<String>),
 }
 
 #[derive(Debug, Subcommand)]
@@ -311,6 +316,8 @@ fn main() -> Result<()> {
         Commands::Local { name, version } => version::local(name, version),
         Commands::Shell { name, version } => version::shell(name, version),
         Commands::Help { plugin, version } => help::help(plugin, version),
+        Commands::Command(args) => ext::ext(args),
+
         Commands::Reshim { args } => {
             trace!("Skipping legacy command `reshim` ({args:?})");
             Ok(())
