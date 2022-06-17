@@ -8,3 +8,8 @@
 - [ ] Implement `use` command for easier installs
 - [ ] Implement registry caching
 - [ ] Implement rc files and extra settings
+- [ ] Add completions
+- [ ] Add documentation for commands
+- [ ] Add documentation for lib crate
+- [ ] Add install script for browser install
+- [ ] Add GitHub actions and publish crates
