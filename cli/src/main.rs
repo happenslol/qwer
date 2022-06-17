@@ -1,7 +1,4 @@
-use std::{
-    io::Write,
-    path::{Path, PathBuf},
-};
+use std::{io::Write, path::Path};
 
 use crate::dirs::{get_dir, BIN_DIR};
 use anyhow::{bail, Context, Result};
@@ -21,7 +18,7 @@ mod util;
 mod version;
 
 #[derive(Debug, Parser)]
-#[clap(author, version, about)]
+#[clap(name = "qwer", author, version, about)]
 struct Cli {
     #[clap(subcommand)]
     command: Commands,
@@ -103,8 +100,13 @@ enum Commands {
         version: Option<String>,
     },
 
-    // Legacy commands
+    #[clap(hide = true)]
     Reshim {
+        args: Vec<String>,
+    },
+
+    #[clap(hide = true)]
+    Which {
         args: Vec<String>,
     },
 
@@ -210,10 +212,10 @@ fn main() -> Result<()> {
                 writeln!(buf, "{}", record.args())
             } else {
                 let level = match record.level() {
-                    log::Level::Error => style(" error ").black().on_red(),
-                    log::Level::Warn => style(" warn ").black().on_yellow(),
-                    log::Level::Debug => style(" debug ").black().on_blue(),
-                    log::Level::Trace => style(" trace ").black().on_cyan(),
+                    log::Level::Error => style(" error ").black().bold().on_red(),
+                    log::Level::Warn => style(" warn ").black().bold().on_yellow(),
+                    log::Level::Debug => style(" debug ").black().bold().on_blue(),
+                    log::Level::Trace => style(" trace ").black().bold().on_cyan(),
                     _ => unreachable!(),
                 };
 
@@ -222,21 +224,14 @@ fn main() -> Result<()> {
         })
         .init();
 
-    let mut self_path = std::env::args()
-        .next()
-        .context("Failed to get executable path")?;
+    let is_asdf = std::env::args().next().context("Failed to get $0")? == "asdf";
+    let self_executable = std::env::current_exe().context("Failed to get current executable")?;
 
-    let is_asdf = self_path == "asdf";
     if !is_asdf {
-        trace!("Running as qwer");
-        let self_path_canon = PathBuf::from(self_path)
-            .canonicalize()
-            .context("Failed to canonicalize self path")?;
-
-        ensure_asdf_alias(self_path_canon.as_path()).context("Failed to ensure asdf alias")?;
-        self_path = self_path_canon.to_string_lossy().to_string();
+        trace!("Running as qwer ({self_executable:?})");
+        ensure_asdf_alias(&self_executable).context("Failed to ensure asdf alias")?;
     } else {
-        trace!("Running as asdf");
+        trace!("Running as asdf ({self_executable:?})");
     }
 
     match Cli::parse().command {
@@ -246,7 +241,8 @@ fn main() -> Result<()> {
 
             let shell_name = shell.name();
             let shell_fns = shell.get();
-            let hook_cmd = format!("\"{self_path}\" export {shell_name}");
+            let self_executable_str = self_executable.to_string_lossy();
+            let hook_cmd = format!("\"{self_executable_str}\" export {shell_name}");
             let hook = shell_fns.hook(&hook_cmd, "qwer_hook");
             print!("{hook}");
 
@@ -320,6 +316,10 @@ fn main() -> Result<()> {
 
         Commands::Reshim { args } => {
             trace!("Skipping legacy command `reshim` ({args:?})");
+            Ok(())
+        }
+        Commands::Which { args } => {
+            trace!("Skipping legacy command `which` ({args:?})");
             Ok(())
         }
     }
