@@ -1,15 +1,40 @@
-use std::{fs, time::Duration};
+use std::{
+    collections::HashMap,
+    fs,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use anyhow::{bail, Result};
 use console::style;
 use log::{info, trace};
-use qwer::plugins::parse_short_repo_url;
+use qwer::plugins::{parse_short_repo_url, Registry};
 use tabled::{object::Segment, Alignment, Modify, Table, Tabled};
 
-use crate::dirs::{get_dir, get_plugin_scripts, INSTALLS_DIR, PLUGINS_DIR, REGISTRIES_DIR};
+use crate::dirs::{
+    get_data_dir, get_dir, get_plugin_scripts, INSTALLS_DIR, PLUGINS_DIR, REGISTRIES_DIR,
+};
 
 const DEFAULT_PLUGIN_REGISTRY_URL: &str = "https://github.com/asdf-vm/asdf-plugins.git";
 const DEFAULT_PLUGIN_REGISTRY: &str = "default";
+const REGISTRY_CONFIG: &str = "registries.toml";
+
+fn save_registries(regs: &HashMap<String, Registry>) -> Result<()> {
+    let registry_config_path = get_data_dir()?.join(REGISTRY_CONFIG);
+    let serialized = toml::to_string(regs)?;
+    fs::write(registry_config_path, serialized)?;
+
+    Ok(())
+}
+
+fn load_registries() -> Result<HashMap<String, Registry>> {
+    let registry_config_path = get_data_dir()?.join(REGISTRY_CONFIG);
+    if !registry_config_path.is_file() {
+        return Ok(HashMap::new());
+    }
+
+    let contents = fs::read_to_string(registry_config_path)?;
+    Ok(toml::from_str(&contents)?)
+}
 
 fn update_registry(url: &str, name: &str, _force: bool) -> Result<()> {
     let registry_dir = get_dir(REGISTRIES_DIR)?.join(name);
@@ -19,8 +44,10 @@ fn update_registry(url: &str, name: &str, _force: bool) -> Result<()> {
         let registries_dir = get_dir(REGISTRIES_DIR)?;
         git::GitRepo::clone(&registries_dir, url, name, None)?;
     } else {
-        let modified = fs::metadata(&registry_dir)?.modified()?;
-        let elapsed = modified.elapsed()?;
+        let mut registries = load_registries()?;
+        let last_sync = registries.get(name).map(|reg| reg.last_sync).unwrap_or(0);
+        let elapsed = (UNIX_EPOCH + Duration::from_secs(last_sync)).elapsed()?;
+
         trace!(
             "Plugin repo `{}` was updated {}s ago",
             name,
@@ -33,6 +60,10 @@ fn update_registry(url: &str, name: &str, _force: bool) -> Result<()> {
         info!("Updating plugin registry {}", style(name).bold());
         let repo = git::GitRepo::new(&registry_dir)?;
         repo.update_to_remote_head()?;
+
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+        registries.insert(name.to_owned(), Registry { last_sync: now });
+        save_registries(&registries)?;
     }
 
     Ok(())

@@ -1,10 +1,11 @@
 use std::{fs, path::Path};
 
 use log::trace;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-pub enum ShortPluginError {
+pub enum RegistryError {
     #[error("plugin `{0}` was not found in the plugin repo")]
     NotFound(String),
 
@@ -15,27 +16,32 @@ pub enum ShortPluginError {
     InvalidFile(String),
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Registry {
+    pub last_sync: u64,
+}
+
 /// Retrieve the repository url from a directory containing plugin references.
 /// See [the asdf plugin repository](https://github.com/asdf-vm/asdf-plugins/tree/master/plugins)
 /// for the expected file format and contents.
 pub fn parse_short_repo_url<P: AsRef<Path>>(
     registry: P,
     plugin: &str,
-) -> Result<String, ShortPluginError> {
+) -> Result<String, RegistryError> {
     let reg_path = registry.as_ref();
     trace!("Parsing short plugin `{plugin}` from registry at `{reg_path:?}`");
 
     let plugin_file = reg_path.join("plugins").join(plugin);
     if !plugin_file.is_file() {
         trace!("Plugin file for `{plugin}` not found at `{plugin_file:?}`");
-        return Err(ShortPluginError::NotFound(plugin.to_owned()));
+        return Err(RegistryError::NotFound(plugin.to_owned()));
     }
 
     let contents = fs::read_to_string(plugin_file)?;
     let parts = contents.split('=').collect::<Vec<&str>>();
     if parts.len() != 2 || parts[0].trim() != "repository" {
         trace!("Failed to parse contents `{contents}` into plugin url");
-        return Err(ShortPluginError::InvalidFile(contents));
+        return Err(RegistryError::InvalidFile(contents));
     }
 
     Ok(parts[1].trim().to_owned())
@@ -66,7 +72,7 @@ mod tests {
         fs::write(plugins.join("foo"), "repository = bar").expect("failed to write plugin file");
 
         let result = parse_short_repo_url(&workdir, "bar");
-        assert!(matches!(result, Err(ShortPluginError::NotFound(_))));
+        assert!(matches!(result, Err(RegistryError::NotFound(_))));
     }
 
     #[test]
@@ -79,6 +85,6 @@ mod tests {
 
         let result = parse_short_repo_url(&workdir, "foo");
         dbg!(&result);
-        assert!(matches!(result, Err(ShortPluginError::InvalidFile(_))));
+        assert!(matches!(result, Err(RegistryError::InvalidFile(_))));
     }
 }

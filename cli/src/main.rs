@@ -194,8 +194,8 @@ fn ensure_asdf_alias(self_path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn assert_running_qwer(is_running_asdf_alias: bool) -> Result<()> {
-    if !is_running_asdf_alias {
+fn assert_running_qwer(is_asdf: bool) -> Result<()> {
+    if is_asdf {
         bail!("This command can not be run from an asdf symlink");
     }
 
@@ -212,10 +212,10 @@ fn main() -> Result<()> {
                 writeln!(buf, "{}", record.args())
             } else {
                 let level = match record.level() {
-                    log::Level::Error => style(" error ").black().bold().on_red(),
-                    log::Level::Warn => style(" warn ").black().bold().on_yellow(),
-                    log::Level::Debug => style(" debug ").black().bold().on_blue(),
-                    log::Level::Trace => style(" trace ").black().bold().on_cyan(),
+                    log::Level::Error => style("error: ").bold().red(),
+                    log::Level::Warn => style("warn: ").bold().yellow(),
+                    log::Level::Debug => style("debug: ").bold().blue(),
+                    log::Level::Trace => style("trace: ").bold().cyan(),
                     _ => unreachable!(),
                 };
 
