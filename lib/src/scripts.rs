@@ -1,14 +1,18 @@
 use std::{
     collections::{HashMap, HashSet},
     fs,
+    io::BufReader,
     os::unix::prelude::PermissionsExt,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use lazy_static::lazy_static;
 use log::trace;
+use prog::{CmdContext, Context};
 use regex::Regex;
 use thiserror::Error;
+use threadpool::ThreadPool;
 
 use crate::{
     env::{Env, IGNORED_ENV_VARS},
@@ -55,6 +59,9 @@ pub enum PluginScriptError {
 
     #[error("no versions were found for query `{0}`")]
     NoMatchingVersionsFound(String),
+
+    #[error("error while running command")]
+    CommandError(#[from] prog::CmdError),
 }
 
 pub struct PluginScripts {
@@ -103,7 +110,23 @@ impl PluginScripts {
         })
     }
 
-    fn run_script<P: AsRef<Path>>(
+    fn run_script<P: AsRef<Path>, T: 'static + Send>(
+        &self,
+        pool: &ThreadPool,
+        parse_output: fn(String) -> T,
+        script: P,
+        env: &[(&str, &str)],
+    ) -> Result<CmdContext<T>, PluginScriptError> {
+        let mut full_env = vec![
+            ("PATH", self.script_env_path.as_str()),
+            ("QWER_LOG", "trace"),
+        ];
+
+        full_env.extend_from_slice(env);
+        Ok(prog::run_script(pool, parse_output, script, &full_env)?)
+    }
+
+    fn run_script_sync<P: AsRef<Path>>(
         &self,
         script: P,
         env: &[(&str, &str)],
@@ -154,16 +177,14 @@ impl PluginScripts {
 
     // Basic functionality
 
-    pub fn list_all(&self) -> Result<Vec<String>, PluginScriptError> {
+    pub fn list_all(
+        &self,
+        pool: &ThreadPool,
+    ) -> Result<CmdContext<Vec<String>>, PluginScriptError> {
         let list_all_script = self.plugin_dir.join("bin/list-all");
         self.assert_script_exists(&list_all_script)?;
 
-        Ok(self
-            .run_script(&list_all_script, &[])?
-            .trim()
-            .split(' ')
-            .map(|v| v.to_owned())
-            .collect())
+        self.run_script(pool, parse_list_all, &list_all_script, &[])
     }
 
     pub fn plugin_installed(&self) -> bool {
@@ -174,7 +195,7 @@ impl PluginScripts {
         self.install_dir.join(version.version_str()).is_dir()
     }
 
-    pub fn find_version(&self, version: &str) -> Result<Version, PluginScriptError> {
+    pub fn find_version(&self, version: &str) -> Result<CmdContext<Version>, PluginScriptError> {
         let parsed = Version::parse(version);
         match parsed {
             Version::Version(version_str) => {
@@ -696,4 +717,12 @@ impl PluginScripts {
             _ => self.find_version(version),
         }
     }
+}
+
+fn parse_output_passthrough(output: String) -> String {
+    output
+}
+
+fn parse_list_all(output: String) -> Vec<String> {
+    output.trim().split(' ').map(|v| v.to_owned()).collect()
 }

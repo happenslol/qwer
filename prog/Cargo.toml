@@ -1,0 +1,11 @@
+[package]
+name = "prog"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+flume = "0.10.13"
+thiserror = "1.0.31"
+duct = { git = "https://github.com/happenslol/duct.rs", branch = "add-stderr-reader" }
+threadpool = "1.8.1"
+log = "0.4.17"
