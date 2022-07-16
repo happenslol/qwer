@@ -1,12 +1,14 @@
 use std::path::PathBuf;
 
 use anyhow::{anyhow, bail, Result};
-use qwer::{
-    shell::{Bash, Shell, ShellState},
-    versions::Versions,
-};
 
-use crate::dirs::{get_plugin_scripts, TOOL_VERSIONS};
+use crate::{
+    dirs::{get_plugin_scripts, TOOL_VERSIONS},
+    lib::{
+        shell::{Bash, Shell, ShellState},
+        versions::Versions,
+    },
+};
 
 fn use_version_for_dir(name: String, version: String, path: PathBuf) -> Result<()> {
     let scripts = get_plugin_scripts(&name)?;

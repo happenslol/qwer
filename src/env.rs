@@ -1,12 +1,14 @@
 use anyhow::{bail, Result};
 use log::trace;
-use qwer::{
-    env::Env,
-    shell::ShellState,
-    versions::{Version, Versions},
-};
 
-use crate::dirs::{get_dir, get_plugin_scripts, INSTALLS_DIR, TOOL_VERSIONS};
+use crate::{
+    dirs::{get_dir, get_plugin_scripts, INSTALLS_DIR, TOOL_VERSIONS},
+    lib::{
+        env::Env,
+        shell::ShellState,
+        versions::{Version, Versions},
+    },
+};
 
 const QWER_STATE: &str = "QWER_STATE";
 const QWER_PREV: &str = "QWER_PREV";

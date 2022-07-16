@@ -2,7 +2,7 @@ use std::{
     fs,
     io::{BufRead, BufReader},
     path::Path,
-    sync::Arc, process::{ExitCode, ExitStatus},
+    sync::Arc, process::ExitStatus,
 };
 
 use duct::ReaderHandle;

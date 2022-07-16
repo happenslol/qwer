@@ -1,6 +1,6 @@
-use crate::{dirs::get_plugin_scripts, util::print_help_and_exit};
 use anyhow::{bail, Result};
-use qwer::versions::Version;
+
+use crate::{dirs::get_plugin_scripts, lib::versions::Version, util::print_help_and_exit};
 
 pub fn help(plugin: Option<String>, version: Option<String>) -> Result<()> {
     if plugin.is_none() {

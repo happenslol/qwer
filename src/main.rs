@@ -4,18 +4,21 @@ use crate::dirs::{get_dir, BIN_DIR};
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use console::style;
+use lib::shell::{Shell, self};
 use log::trace;
-use qwer::shell::Shell;
 
 mod dirs;
 mod env;
 mod ext;
+mod git;
 mod help;
 mod install;
+mod lib;
 mod list;
 mod plugin;
 mod util;
 mod version;
+mod prog;
 
 #[derive(Debug, Parser)]
 #[clap(name = "qwer", author, version, about)]
@@ -172,8 +175,8 @@ enum ListCommand {
 impl ShellOptions {
     fn get(&self) -> &dyn Shell {
         match self {
-            ShellOptions::Bash => &qwer::shell::Bash,
-            ShellOptions::Zsh => &qwer::shell::Zsh,
+            ShellOptions::Bash => &shell::Bash,
+            ShellOptions::Zsh => &shell::Zsh,
         }
     }
 

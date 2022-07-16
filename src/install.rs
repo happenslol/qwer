@@ -2,9 +2,11 @@ use std::collections::HashMap;
 
 use anyhow::{bail, Result};
 use log::{info, trace};
-use qwer::versions::{Version, Versions};
 
-use crate::dirs::{get_plugin_scripts, TOOL_VERSIONS};
+use crate::{
+    dirs::{get_plugin_scripts, TOOL_VERSIONS},
+    lib::versions::{Version, Versions},
+};
 
 pub fn install_all(concurrency: Option<usize>, keep_download: bool) -> Result<()> {
     let to_install = gather_versions()?;
@@ -75,55 +77,59 @@ fn install(
     concurrency: Option<usize>,
     keep_download: bool,
 ) -> Result<()> {
-    let scripts = get_plugin_scripts(name)?;
-    let resolved = scripts.resolve(version)?;
-    info!("Resolved {} to {}", version, resolved.raw());
+    todo!()
 
-    if let Version::System = resolved {
-        bail!("can't install system version");
-    }
-
-    info!("Installing {} {}", &name, resolved.raw());
-
-    if scripts.has_download() {
-        info!("Running download script...");
-        let _download_output = scripts.download(&resolved)?;
-    }
-
-    info!("Running install script...");
-    let _install_output = scripts.install(&resolved, concurrency)?;
-
-    info!("Installed {} {}", &name, resolved.raw());
-
-    if !keep_download {
-        scripts.rm_version_download(&resolved)?;
-    }
-
-    Ok(())
+    // let scripts = get_plugin_scripts(name)?;
+    // let resolved = scripts.resolve(version)?;
+    // info!("Resolved {} to {}", version, resolved.raw());
+    //
+    // if let Version::System = resolved {
+    //     bail!("can't install system version");
+    // }
+    //
+    // info!("Installing {} {}", &name, resolved.raw());
+    //
+    // if scripts.has_download() {
+    //     info!("Running download script...");
+    //     let _download_output = scripts.download(&resolved)?;
+    // }
+    //
+    // info!("Running install script...");
+    // let _install_output = scripts.install(&resolved, concurrency)?;
+    //
+    // info!("Installed {} {}", &name, resolved.raw());
+    //
+    // if !keep_download {
+    //     scripts.rm_version_download(&resolved)?;
+    // }
+    //
+    // Ok(())
 }
 
 pub fn uninstall(name: String, version: String) -> Result<()> {
-    let scripts = get_plugin_scripts(&name)?;
-    let version = Version::parse(&version);
-    if !scripts.version_installed(&version) {
-        bail!("version `{}` is not installed", version.version_str());
-    }
+    todo!()
 
-    info!("Uninstalling {} {}", &name, version.raw());
-
-    if scripts.has_uninstall() {
-        info!("Running uninstall script...");
-        let uninstall_output = scripts.uninstall(&version)?;
-        trace!("Uninstall ouput:\n{uninstall_output}");
-    } else {
-        info!("Running version directory...");
-        scripts.rm_version(&version)?;
-    }
-
-    // Just in case this wasn't cleaned earlier
-    scripts.rm_version_download(&version)?;
-
-    info!("Uninstalled {} {}", &name, version.raw());
-
-    Ok(())
+    // let scripts = get_plugin_scripts(&name)?;
+    // let version = Version::parse(&version);
+    // if !scripts.version_installed(&version) {
+    //     bail!("version `{}` is not installed", version.version_str());
+    // }
+    //
+    // info!("Uninstalling {} {}", &name, version.raw());
+    //
+    // if scripts.has_uninstall() {
+    //     info!("Running uninstall script...");
+    //     let uninstall_output = scripts.uninstall(&version)?;
+    //     trace!("Uninstall ouput:\n{uninstall_output}");
+    // } else {
+    //     info!("Running version directory...");
+    //     scripts.rm_version(&version)?;
+    // }
+    //
+    // // Just in case this wasn't cleaned earlier
+    // scripts.rm_version_download(&version)?;
+    //
+    // info!("Uninstalled {} {}", &name, version.raw());
+    //
+    // Ok(())
 }

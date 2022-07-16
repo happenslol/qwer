@@ -7,14 +7,16 @@ use std::{
 
 use lazy_static::lazy_static;
 use log::trace;
-use prog::CmdContext;
 use regex::Regex;
 use thiserror::Error;
 use threadpool::ThreadPool;
 
 use crate::{
-    env::{Env, IGNORED_ENV_VARS},
-    versions::Version,
+    lib::{
+        env::{Env, IGNORED_ENV_VARS},
+        versions::Version,
+    },
+    prog::CmdContext,
 };
 
 lazy_static! {
@@ -59,7 +61,7 @@ pub enum PluginScriptError {
     NoMatchingVersionsFound(String),
 
     #[error("error while running command")]
-    CommandError(#[from] prog::CmdError),
+    CommandError(#[from] crate::prog::CmdError),
 }
 
 pub struct PluginScripts {
@@ -121,7 +123,7 @@ impl PluginScripts {
         ];
 
         full_env.extend_from_slice(env);
-        Ok(prog::run_script(pool, parse_output, script, &full_env)?)
+        Ok(crate::prog::run_script(pool, parse_output, script, &full_env)?)
     }
 
     fn run_script_sync<P: AsRef<Path>>(
@@ -721,6 +723,16 @@ impl PluginScripts {
         }
 
         Ok(env)
+    }
+
+    pub fn resolve(&self, version: &str) -> Result<Version, PluginScriptError> {
+        todo!()
+
+        // match version {
+        //     "latest" => self.latest(),
+        //     "latest-stable" => self.latest_stable(),
+        //     _ => self.find_version(version),
+        // }
     }
 }
 

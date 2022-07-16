@@ -1,8 +1,32 @@
-[workspace]
+[package]
+name = "qwer"
+version = "0.1.0"
+edition = "2021"
 
-members = [
-	"cli",
-	"lib",
-	"git",
-  "prog",
-]
+[[bin]]
+name = "qwer"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "3.1.18", features = ["derive"] }
+dirs = "4.0.0"
+anyhow = "1.0.57"
+tabled = "0.7.0"
+log = "0.4.17"
+env_logger = "0.9.0"
+toml = "0.5.9"
+threadpool = "1.8.1"
+duct = { git = "https://github.com/happenslol/duct.rs", branch = "add-stderr-reader" }
+thiserror = "1.0.31"
+console = "0.15.0"
+regex = "1.5.6"
+lazy_static = "1.4.0"
+base64 = "0.13.0"
+twox-hash = "1.6.3"
+snap = "1.0.5"
+num_threads = "0.1.6"
+serde = { version = "1.0.137", features = ["derive"] }
+flume = "0.10.13"
+
+[dev-dependencies]
+tempfile = "3.3.0"

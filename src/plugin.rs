@@ -4,15 +4,16 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use anyhow::{bail, Result};
+use crate::{
+    git,
+    lib::plugins::{parse_short_repo_url, Registry},
+};
+use anyhow::Result;
 use console::style;
 use log::{info, trace};
-use qwer::plugins::{parse_short_repo_url, Registry};
 use tabled::{object::Segment, Alignment, Modify, Table, Tabled};
 
-use crate::dirs::{
-    get_data_dir, get_dir, get_plugin_scripts, INSTALLS_DIR, PLUGINS_DIR, REGISTRIES_DIR,
-};
+use crate::dirs::{get_data_dir, get_dir, PLUGINS_DIR, REGISTRIES_DIR};
 
 const DEFAULT_PLUGIN_REGISTRY_URL: &str = "https://github.com/asdf-vm/asdf-plugins.git";
 const DEFAULT_PLUGIN_REGISTRY: &str = "default";
@@ -70,26 +71,28 @@ fn update_registry(url: &str, name: &str, _force: bool) -> Result<()> {
 }
 
 pub fn add(name: String, git_url: Option<String>) -> Result<()> {
-    let plugin_dir = get_dir(PLUGINS_DIR)?;
-    let add_plugin_dir = plugin_dir.join(&name);
-    if add_plugin_dir.is_dir() {
-        bail!("plugin with name `{name}` is already installed");
-    }
+    todo!()
 
-    let git_url = match git_url {
-        Some(git_url) => git_url,
-        None => {
-            let registry_dir = get_dir(REGISTRIES_DIR)?.join(DEFAULT_PLUGIN_REGISTRY);
-            parse_short_repo_url(registry_dir, &name)?
-        }
-    };
-
-    git::GitRepo::clone(&plugin_dir, &git_url, &name, None)?;
-
-    let scripts = get_plugin_scripts(&name)?;
-    scripts.post_plugin_add(&git_url)?;
-
-    Ok(())
+    // let plugin_dir = get_dir(PLUGINS_DIR)?;
+    // let add_plugin_dir = plugin_dir.join(&name);
+    // if add_plugin_dir.is_dir() {
+    //     bail!("plugin with name `{name}` is already installed");
+    // }
+    //
+    // let git_url = match git_url {
+    //     Some(git_url) => git_url,
+    //     None => {
+    //         let registry_dir = get_dir(REGISTRIES_DIR)?.join(DEFAULT_PLUGIN_REGISTRY);
+    //         parse_short_repo_url(registry_dir, &name)?
+    //     }
+    // };
+    //
+    // git::GitRepo::clone(&plugin_dir, &git_url, &name, None)?;
+    //
+    // let scripts = get_plugin_scripts(&name)?;
+    // scripts.post_plugin_add(&git_url)?;
+    //
+    // Ok(())
 }
 
 fn normalize_repo_url(url: &str) -> String {
@@ -229,45 +232,49 @@ pub fn list_all() -> Result<()> {
 }
 
 pub fn remove(name: String) -> Result<()> {
-    let plugin_dir = get_dir(PLUGINS_DIR)?;
-    let remove_plugin_dir = plugin_dir.join(&name);
-    if !remove_plugin_dir.is_dir() {
-        bail!("plugin `{name}` is not installed");
-    }
+    todo!()
 
-    let scripts = get_plugin_scripts(&name)?;
-    scripts.pre_plugin_remove()?;
-
-    fs::remove_dir_all(remove_plugin_dir)?;
-    fs::remove_dir_all(get_dir(INSTALLS_DIR)?.join(&name))?;
-
-    Ok(())
+    // let plugin_dir = get_dir(PLUGINS_DIR)?;
+    // let remove_plugin_dir = plugin_dir.join(&name);
+    // if !remove_plugin_dir.is_dir() {
+    //     bail!("plugin `{name}` is not installed");
+    // }
+    //
+    // let scripts = get_plugin_scripts(&name)?;
+    // scripts.pre_plugin_remove()?;
+    //
+    // fs::remove_dir_all(remove_plugin_dir)?;
+    // fs::remove_dir_all(get_dir(INSTALLS_DIR)?.join(&name))?;
+    //
+    // Ok(())
 }
 
 pub fn update(name: String, git_ref: Option<String>) -> Result<()> {
-    let update_plugin_dir = get_dir(PLUGINS_DIR)?.join(&name);
-    if !update_plugin_dir.is_dir() {
-        bail!("plugin `{name}` is not installed");
-    }
+    todo!()
 
-    let repo = git::GitRepo::new(&update_plugin_dir)?;
-    let prev = repo.get_head_ref()?;
-
-    if let Some(git_ref) = git_ref {
-        println!("updating `{name}` to {git_ref}...");
-        repo.update_to_ref(&git_ref)?;
-    } else {
-        // TODO: Does update without a ref always mean we
-        // want to go to the head ref?
-        println!("updating `{name}` to latest version...");
-        repo.update_to_remote_head()?;
-    }
-
-    let scripts = get_plugin_scripts(&name)?;
-    let post = repo.get_head_ref()?;
-    scripts.post_plugin_update(&prev, &post)?;
-
-    Ok(())
+    // let update_plugin_dir = get_dir(PLUGINS_DIR)?.join(&name);
+    // if !update_plugin_dir.is_dir() {
+    //     bail!("plugin `{name}` is not installed");
+    // }
+    //
+    // let repo = git::GitRepo::new(&update_plugin_dir)?;
+    // let prev = repo.get_head_ref()?;
+    //
+    // if let Some(git_ref) = git_ref {
+    //     println!("updating `{name}` to {git_ref}...");
+    //     repo.update_to_ref(&git_ref)?;
+    // } else {
+    //     // TODO: Does update without a ref always mean we
+    //     // want to go to the head ref?
+    //     println!("updating `{name}` to latest version...");
+    //     repo.update_to_remote_head()?;
+    // }
+    //
+    // let scripts = get_plugin_scripts(&name)?;
+    // let post = repo.get_head_ref()?;
+    // scripts.post_plugin_update(&prev, &post)?;
+    //
+    // Ok(())
 }
 
 pub fn update_all() -> Result<()> {

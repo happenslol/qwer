@@ -1,7 +1,8 @@
 use std::{fs, path::PathBuf};
 
 use anyhow::{anyhow, bail, Result};
-use qwer::scripts::PluginScripts;
+
+use crate::lib::scripts::PluginScripts;
 
 pub const REGISTRIES_DIR: &str = "registries";
 pub const PLUGINS_DIR: &str = "plugins";

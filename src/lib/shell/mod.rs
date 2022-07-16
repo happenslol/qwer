@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet};
 pub use bash::Bash;
 pub use zsh::Zsh;
 
-use crate::env::Env;
+use super::env::Env;
 
 pub trait Shell {
     fn hook(&self, cmd: &str, hook_fn: &str) -> String;
