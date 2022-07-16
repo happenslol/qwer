@@ -1,22 +1,22 @@
 use std::{
     collections::{HashMap, HashSet},
     fs,
+    io::{BufRead, BufReader},
     os::unix::prelude::PermissionsExt,
     path::{Path, PathBuf},
 };
 
+use flume::Receiver;
+use indicatif::ProgressBar;
 use lazy_static::lazy_static;
 use log::trace;
 use regex::Regex;
 use thiserror::Error;
 use threadpool::ThreadPool;
 
-use crate::{
-    lib::{
-        env::{Env, IGNORED_ENV_VARS},
-        versions::Version,
-    },
-    prog::CmdContext,
+use crate::lib::{
+    env::{Env, IGNORED_ENV_VARS},
+    versions::Version,
 };
 
 lazy_static! {
@@ -59,9 +59,6 @@ pub enum PluginScriptError {
 
     #[error("no versions were found for query `{0}`")]
     NoMatchingVersionsFound(String),
-
-    #[error("error while running command")]
-    CommandError(#[from] crate::prog::CmdError),
 }
 
 pub struct PluginScripts {
@@ -71,6 +68,8 @@ pub struct PluginScripts {
     download_dir: PathBuf,
     script_env_path: String,
 }
+
+type BackgroundScriptResult<T> = Result<Receiver<Result<T, PluginScriptError>>, PluginScriptError>;
 
 impl PluginScripts {
     pub fn new<Plugin, Install, Download>(
@@ -110,23 +109,79 @@ impl PluginScripts {
         })
     }
 
-    fn run_script<P: AsRef<Path>, T: 'static + Send>(
+    fn run_background_script<P: AsRef<Path>, T: 'static + Send>(
         &self,
+        bar: ProgressBar,
         pool: &ThreadPool,
         parse_output: fn(String) -> T,
         script: P,
         env: &[(&str, &str)],
-    ) -> Result<CmdContext<T>, PluginScriptError> {
-        let mut full_env = vec![
-            ("PATH", self.script_env_path.as_str()),
-            ("QWER_LOG", "trace"),
-        ];
+    ) -> BackgroundScriptResult<T> {
+        if log::log_enabled!(log::Level::Trace) {
+            let script_path = script.as_ref();
+            let contents = fs::read_to_string(&script_path).unwrap_or_else(|_| "".to_owned());
+            trace!("Running script `{script_path:?}` with content: \n{contents}");
+        }
 
-        full_env.extend_from_slice(env);
-        Ok(crate::prog::run_script(pool, parse_output, script, &full_env)?)
+        let (mut stderr_read, stderr_write) = match os_pipe::pipe() {
+            Ok(result) => result,
+            Err(_) => todo!(),
+        };
+
+        let mut expr = duct::cmd!(script.as_ref())
+            .env("PATH", &self.script_env_path)
+            .env("QWER_LOG", "trace")
+            .stdout_capture()
+            .stderr_file(stderr_write)
+            .unchecked();
+
+        for (key, val) in env {
+            expr = expr.env(key, val);
+        }
+
+        let (tx, rx) = flume::bounded(1);
+        let reader = BufReader::new(stderr_read).lines();
+
+        pool.execute(move || {
+            let handle = match expr.start() {
+                Ok(handle) => handle,
+                Err(err) => {
+                    let _ = tx.send(Err(err.into()));
+                    return;
+                }
+            };
+
+            for line in reader {}
+
+            let output = match handle.wait() {
+                Ok(output) => output,
+                Err(err) => {
+                    let _ = tx.send(Err(err.into()));
+                    return;
+                }
+            };
+
+            let output_str = match String::from_utf8(output.stdout) {
+                Ok(output_str) => output_str,
+                Err(err) => {
+                    let _ = tx.send(Err(err.into()));
+                    return;
+                }
+            };
+
+            if !output.status.success() {
+                let _ = tx.send(Err(PluginScriptError::ScriptFailed(output_str)));
+                return;
+            }
+
+            let parsed = parse_output(output_str);
+            let _ = tx.send(Ok(parsed));
+        });
+
+        Ok(rx)
     }
 
-    fn run_script_sync<P: AsRef<Path>>(
+    fn run_script<P: AsRef<Path>>(
         &self,
         script: P,
         env: &[(&str, &str)],
@@ -179,11 +234,12 @@ impl PluginScripts {
 
     pub fn list_all(
         &self,
+        bar: ProgressBar,
         pool: &ThreadPool,
-    ) -> Result<CmdContext<Vec<String>>, PluginScriptError> {
+    ) -> BackgroundScriptResult<Vec<String>> {
         let list_all_script = self.plugin_dir.join("bin/list-all");
         self.assert_script_exists(&list_all_script)?;
-        self.run_script(pool, parse_list_all, &list_all_script, &[])
+        self.run_background_script(bar, pool, parse_list_all, &list_all_script, &[])
     }
 
     pub fn plugin_installed(&self) -> bool {
@@ -196,11 +252,12 @@ impl PluginScripts {
 
     pub fn latest(
         &self,
+        bar: ProgressBar,
         pool: &ThreadPool,
-    ) -> Result<CmdContext<Option<Version>>, PluginScriptError> {
+    ) -> BackgroundScriptResult<Option<Version>> {
         let list_all_script = self.plugin_dir.join("bin/list-all");
         self.assert_script_exists(&list_all_script)?;
-        self.run_script(pool, parse_find_latest, &list_all_script, &[])
+        self.run_background_script(bar, pool, parse_find_latest, &list_all_script, &[])
     }
 
     pub fn has_download(&self) -> bool {
@@ -209,9 +266,10 @@ impl PluginScripts {
 
     pub fn download(
         &self,
+        bar: ProgressBar,
         pool: &ThreadPool,
         version: &Version,
-    ) -> Option<Result<CmdContext<()>, PluginScriptError>> {
+    ) -> Option<BackgroundScriptResult<()>> {
         if version == &Version::System {
             return None;
         }
@@ -237,7 +295,8 @@ impl PluginScripts {
             _ => {}
         };
 
-        Some(self.run_script(
+        Some(self.run_background_script(
+            bar,
             pool,
             parse_output_none,
             &download_script,
@@ -252,10 +311,11 @@ impl PluginScripts {
 
     pub fn install(
         &self,
+        bar: ProgressBar,
         pool: &ThreadPool,
         version: &Version,
         concurrency: Option<usize>,
-    ) -> Option<Result<CmdContext<String>, PluginScriptError>> {
+    ) -> Option<BackgroundScriptResult<String>> {
         trace!(
             "Installing version {version:?} for plugin `{:?}` to `{:?}`",
             self.plugin_dir,
@@ -292,7 +352,8 @@ impl PluginScripts {
             .or_else(|| num_threads::num_threads().map(|num| num.get()))
             .unwrap_or(1);
 
-        Some(self.run_script(
+        Some(self.run_background_script(
+            bar,
             pool,
             parse_output_passthrough,
             &install_script,
@@ -330,9 +391,10 @@ impl PluginScripts {
 
     pub fn uninstall(
         &self,
+        bar: ProgressBar,
         pool: &ThreadPool,
         version: &Version,
-    ) -> Option<Result<CmdContext<String>, PluginScriptError>> {
+    ) -> Option<BackgroundScriptResult<String>> {
         trace!(
             "Uninstalling version {version:?} for plugin `{:?}` from `{:?}`",
             self.plugin_dir,
@@ -359,7 +421,8 @@ impl PluginScripts {
             _ => {}
         };
 
-        Some(self.run_script(
+        Some(self.run_background_script(
+            bar,
             pool,
             parse_output_passthrough,
             &uninstall_script,
@@ -419,7 +482,7 @@ impl PluginScripts {
             env.push((ASDF_INSTALL_VERSION, version.version_str()));
         }
 
-        let output = self.run_script_sync(&help_path, &env)?;
+        let output = self.run_script(&help_path, &env)?;
 
         Ok(Some(output))
     }
@@ -434,7 +497,7 @@ impl PluginScripts {
         }
 
         let version_dir = self.install_dir.join(version.version_str());
-        let output = self.run_script_sync(
+        let output = self.run_script(
             &script_path,
             &[
                 (ASDF_INSTALL_TYPE, version.install_type()),
@@ -495,7 +558,7 @@ impl PluginScripts {
             fs::set_permissions(&exec_echo_path, PermissionsExt::from_mode(0o0755))?;
         }
 
-        let output = self.run_script_sync(
+        let output = self.run_script(
             &exec_echo_path,
             &[
                 (ASDF_INSTALL_TYPE, version.install_type()),
@@ -579,15 +642,16 @@ impl PluginScripts {
 
     pub fn latest_stable(
         &self,
+        bar: ProgressBar,
         pool: &ThreadPool,
-    ) -> Result<CmdContext<Option<Version>>, PluginScriptError> {
+    ) -> BackgroundScriptResult<Option<Version>> {
         let path = self.plugin_dir.join("bin/latest-stable");
         match path.is_file() {
-            true => self.run_script(pool, parse_latest_stable, &path, &[]),
+            true => self.run_background_script(bar, pool, parse_latest_stable, &path, &[]),
             false => {
                 let list_all_script = self.plugin_dir.join("bin/list-all");
                 self.assert_script_exists(&list_all_script)?;
-                self.run_script(pool, parse_find_latest_stable, &list_all_script, &[])
+                self.run_background_script(bar, pool, parse_find_latest_stable, &list_all_script, &[])
             }
         }
     }
@@ -596,15 +660,17 @@ impl PluginScripts {
 
     pub fn post_plugin_add(
         &self,
+        bar: ProgressBar,
         pool: &ThreadPool,
         install_url: &str,
-    ) -> Option<Result<CmdContext<()>, PluginScriptError>> {
+    ) -> Option<BackgroundScriptResult<()>> {
         let path = self.plugin_dir.join("bin/post-plugin-add");
         if !path.is_file() {
             return None;
         }
 
-        Some(self.run_script(
+        Some(self.run_background_script(
+            bar,
             pool,
             parse_output_none,
             &path,
@@ -614,16 +680,18 @@ impl PluginScripts {
 
     pub fn post_plugin_update(
         &self,
+        bar: ProgressBar,
         pool: &ThreadPool,
         prev: &str,
         post: &str,
-    ) -> Option<Result<CmdContext<()>, PluginScriptError>> {
+    ) -> Option<BackgroundScriptResult<()>> {
         let path = self.plugin_dir.join("bin/post-plugin-add");
         if !path.is_file() {
             return None;
         }
 
-        Some(self.run_script(
+        Some(self.run_background_script(
+            bar,
             pool,
             parse_output_none,
             &path,
@@ -637,14 +705,16 @@ impl PluginScripts {
 
     pub fn pre_plugin_remove(
         &self,
+        bar: ProgressBar,
         pool: &ThreadPool,
-    ) -> Option<Result<CmdContext<()>, PluginScriptError>> {
+    ) -> Option<BackgroundScriptResult<()>> {
         let path = self.plugin_dir.join("bin/post-plugin-add");
         if !path.is_file() {
             return None;
         }
 
-        Some(self.run_script(
+        Some(self.run_background_script(
+            bar,
             pool,
             parse_output_none,
             &path,

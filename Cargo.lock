@@ -135,11 +135,12 @@ dependencies = [
 [[package]]
 name = "duct"
 version = "0.13.5"
-source = "git+https://github.com/happenslol/duct.rs?branch=add-stderr-reader#2d1bcabd546f5d9ebc2650a86a1e7d5e074d7496"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0fc6a0a59ed0888e0041cf708e66357b7ae1a82f1c67247e1f93b5e0818f7d8d"
 dependencies = [
  "libc",
  "once_cell",
- "os_pipe",
+ "os_pipe 0.9.2",
  "shared_child",
 ]
 
@@ -247,6 +248,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "indicatif"
+version = "0.17.0-rc.11"
+source = "git+https://github.com/happenslol/indicatif?branch=improve-multiline-progress-support#1467bc566198d7fef4e4aab1a2787a936f4c2ca2"
+dependencies = [
+ "console",
+ "number_prefix",
+ "unicode-width",
+]
+
+[[package]]
 name = "instant"
 version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -330,10 +341,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "number_prefix"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "830b246a0e5f20af87141b25c173cd1b609bd7779a4617d6ec582abaf90870f3"
+
+[[package]]
 name = "once_cell"
 version = "1.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "18a6dbe30758c9f83eb00cbea4ac95966305f5a7772f3f42ebfc7fc7eddbd8e1"
+
+[[package]]
+name = "os_pipe"
+version = "0.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fb233f06c2307e1f5ce2ecad9f8121cffbbee2c95428f44ea85222e460d0d213"
+dependencies = [
+ "libc",
+ "winapi",
+]
 
 [[package]]
 name = "os_pipe"
@@ -440,9 +467,11 @@ dependencies = [
  "duct",
  "env_logger",
  "flume",
+ "indicatif",
  "lazy_static",
  "log",
  "num_threads",
+ "os_pipe 1.0.1",
  "regex",
  "serde",
  "snap",
@@ -558,9 +587,9 @@ dependencies = [
 
 [[package]]
 name = "shared_child"
-version = "1.0.0"
+version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b0d94659ad3c2137fef23ae75b03d5241d633f8acded53d672decfa0e6e0caef"
+checksum = "6be9f7d5565b1483af3e72975e2dee33879b3b86bd48c0929fccf6585d79e65a"
 dependencies = [
  "libc",
  "winapi",

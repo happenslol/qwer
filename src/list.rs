@@ -1,8 +1,10 @@
 use std::fs::{self, DirEntry};
 
 use anyhow::{bail, Result};
+use indicatif::ProgressBar;
+use threadpool::ThreadPool;
 
-use crate::dirs::{get_dir, INSTALLS_DIR};
+use crate::dirs::{get_dir, get_plugin_scripts, INSTALLS_DIR};
 
 pub fn all_installed() -> Result<()> {
     let install_dir = get_dir(INSTALLS_DIR)?;
@@ -67,21 +69,25 @@ fn get_installed_versions(name: &str, filter: Option<String>) -> Result<Vec<Stri
     Ok(filtered)
 }
 
-fn get_available_versions(name: &str, filter: Option<String>) -> Result<Vec<String>> {
-    todo!()
+fn get_available_versions(
+    pool: &ThreadPool,
+    name: &str,
+    filter: Option<String>,
+) -> Result<Vec<String>> {
+    let scripts = get_plugin_scripts(name)?;
+    let bar = ProgressBar::new(1);
+    let versions = scripts.list_all(pool)?;
 
-    // let scripts = get_plugin_scripts(name)?;
-    // let versions = scripts.list_all()?;
-    // let filtered = if let Some(filter) = filter {
-    //     versions
-    //         .into_iter()
-    //         .filter(|version| version.starts_with(&filter))
-    //         .collect::<Vec<_>>()
-    // } else {
-    //     versions
-    // };
-    //
-    // Ok(filtered)
+    let filtered = if let Some(filter) = filter {
+        versions
+            .into_iter()
+            .filter(|version| version.starts_with(&filter))
+            .collect::<Vec<_>>()
+    } else {
+        versions
+    };
+
+    Ok(filtered)
 }
 
 pub fn all(name: String, filter: Option<String>) -> Result<()> {
