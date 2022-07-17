@@ -1,3 +1,4 @@
+#![allow(unused)]
 use std::{io::Write, path::Path};
 
 use anyhow::{bail, Context, Result};
