@@ -6,6 +6,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use console::style;
 use flume::Receiver;
 use indicatif::ProgressBar;
 use lazy_static::lazy_static;
@@ -113,6 +114,7 @@ impl PluginScripts {
         &self,
         bar: ProgressBar,
         pool: &ThreadPool,
+        message: String,
         parse_output: fn(String) -> T,
         script: P,
         env: &[(&str, &str)],
@@ -151,7 +153,33 @@ impl PluginScripts {
                 }
             };
 
-            for line in reader {}
+            let mut lines = Vec::new();
+            for line in reader {
+                let line = match line {
+                    Ok(line) => line,
+                    Err(_) => continue,
+                };
+
+                lines.push(line);
+                let mut last_lines = lines
+                    .iter()
+                    .filter(|line| !line.is_empty())
+                    .rev()
+                    .take(3)
+                    .map(|line| format!("      {}", line))
+                    .collect::<Vec<_>>();
+
+                last_lines.reverse();
+                if last_lines.is_empty() {
+                    continue;
+                }
+
+                bar.set_message(format!(
+                    "{}\n{}",
+                    message,
+                    style(last_lines.join("\n")).dim()
+                ));
+            }
 
             let output = match handle.wait() {
                 Ok(output) => output,
@@ -161,7 +189,7 @@ impl PluginScripts {
                 }
             };
 
-            let output_str = match String::from_utf8(output.stdout) {
+            let output_str = match String::from_utf8(output.stdout.clone()) {
                 Ok(output_str) => output_str,
                 Err(err) => {
                     let _ = tx.send(Err(err.into()));
@@ -239,7 +267,8 @@ impl PluginScripts {
     ) -> BackgroundScriptResult<Vec<String>> {
         let list_all_script = self.plugin_dir.join("bin/list-all");
         self.assert_script_exists(&list_all_script)?;
-        self.run_background_script(bar, pool, parse_list_all, &list_all_script, &[])
+        let message = style("Running ...").bold().to_string();
+        self.run_background_script(bar, pool, message, parse_list_all, &list_all_script, &[])
     }
 
     pub fn plugin_installed(&self) -> bool {
@@ -257,7 +286,8 @@ impl PluginScripts {
     ) -> BackgroundScriptResult<Option<Version>> {
         let list_all_script = self.plugin_dir.join("bin/list-all");
         self.assert_script_exists(&list_all_script)?;
-        self.run_background_script(bar, pool, parse_find_latest, &list_all_script, &[])
+        let message = style("Running ...").bold().to_string();
+        self.run_background_script(bar, pool, message, parse_find_latest, &list_all_script, &[])
     }
 
     pub fn has_download(&self) -> bool {
@@ -295,9 +325,11 @@ impl PluginScripts {
             _ => {}
         };
 
+        let message = style("Running ...").bold().to_string();
         Some(self.run_background_script(
             bar,
             pool,
+            message,
             parse_output_none,
             &download_script,
             &[
@@ -352,9 +384,11 @@ impl PluginScripts {
             .or_else(|| num_threads::num_threads().map(|num| num.get()))
             .unwrap_or(1);
 
+        let message = style("Running ...").bold().to_string();
         Some(self.run_background_script(
             bar,
             pool,
+            message,
             parse_output_passthrough,
             &install_script,
             &[
@@ -421,9 +455,11 @@ impl PluginScripts {
             _ => {}
         };
 
+        let message = style("Running ...").bold().to_string();
         Some(self.run_background_script(
             bar,
             pool,
+            message,
             parse_output_passthrough,
             &uninstall_script,
             &[
@@ -647,11 +683,23 @@ impl PluginScripts {
     ) -> BackgroundScriptResult<Option<Version>> {
         let path = self.plugin_dir.join("bin/latest-stable");
         match path.is_file() {
-            true => self.run_background_script(bar, pool, parse_latest_stable, &path, &[]),
+            true => {
+                let message = style("Running ...").bold().to_string();
+                self.run_background_script(bar, pool, message, parse_latest_stable, &path, &[])
+            }
             false => {
                 let list_all_script = self.plugin_dir.join("bin/list-all");
+                let message = style("Running ...").bold().to_string();
+
                 self.assert_script_exists(&list_all_script)?;
-                self.run_background_script(bar, pool, parse_find_latest_stable, &list_all_script, &[])
+                self.run_background_script(
+                    bar,
+                    pool,
+                    message,
+                    parse_find_latest_stable,
+                    &list_all_script,
+                    &[],
+                )
             }
         }
     }
@@ -669,9 +717,11 @@ impl PluginScripts {
             return None;
         }
 
+        let message = style("Running ...").bold().to_string();
         Some(self.run_background_script(
             bar,
             pool,
+            message,
             parse_output_none,
             &path,
             &[(ASDF_PLUGIN_SOURCE_URL, install_url)],
@@ -690,9 +740,11 @@ impl PluginScripts {
             return None;
         }
 
+        let message = style("Running ...").bold().to_string();
         Some(self.run_background_script(
             bar,
             pool,
+            message,
             parse_output_none,
             &path,
             &[
@@ -713,9 +765,11 @@ impl PluginScripts {
             return None;
         }
 
+        let message = style("Running ...").bold().to_string();
         Some(self.run_background_script(
             bar,
             pool,
+            message,
             parse_output_none,
             &path,
             &[(ASDF_PLUGIN_PATH, &*self.plugin_dir.to_string_lossy())],

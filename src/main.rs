@@ -8,17 +8,9 @@ use lib::shell::{Shell, self};
 use log::trace;
 
 mod dirs;
-mod env;
-mod ext;
 mod git;
-mod help;
-mod install;
 mod lib;
-mod list;
-mod plugin;
-mod util;
-mod version;
-mod prog;
+mod cmds;
 
 #[derive(Debug, Parser)]
 #[clap(name = "qwer", author, version, about)]
@@ -255,7 +247,7 @@ fn main() -> Result<()> {
             trace!("Exporting {} env", shell.name());
             assert_running_qwer(is_asdf)?;
 
-            let state = env::update_env()?;
+            let state = cmds::env::update_env()?;
             let set_env = shell.get().apply(&state);
 
             trace!("Resolved env export:\n{set_env}");
@@ -264,23 +256,23 @@ fn main() -> Result<()> {
             Ok(())
         }
         Commands::Plugin { command } => match command {
-            PluginCommand::Add { name, git_url } => plugin::add(name, git_url),
+            PluginCommand::Add { name, git_url } => cmds::plugin::add(name, git_url),
             PluginCommand::List {
                 command,
                 urls,
                 refs,
             } => match command {
-                Some(PluginListCommand::All) => plugin::list_all(),
-                None => plugin::list(urls, refs),
+                Some(PluginListCommand::All) => cmds::plugin::list_all(),
+                None => cmds::plugin::list(urls, refs),
             },
-            PluginCommand::Remove { name } => plugin::remove(name),
+            PluginCommand::Remove { name } => cmds::plugin::remove(name),
             PluginCommand::Update {
                 command,
                 name,
                 git_ref,
             } => match (command, name) {
-                (Some(PluginUpdateCommand::All), ..) => plugin::update_all(),
-                (None, Some(name)) => plugin::update(name, git_ref),
+                (Some(PluginUpdateCommand::All), ..) => cmds::plugin::update_all(),
+                (None, Some(name)) => cmds::plugin::update(name, git_ref),
                 _ => unreachable!(),
             },
         },
@@ -290,32 +282,32 @@ fn main() -> Result<()> {
             concurrency,
             keep_download,
         } => match (name, version) {
-            (None, None) => install::install_all(concurrency, keep_download),
-            (Some(name), None) => install::install_one(name, concurrency, keep_download),
+            (None, None) => cmds::install::install_all(concurrency, keep_download),
+            (Some(name), None) => cmds::install::install_one(name, concurrency, keep_download),
             (Some(name), Some(version)) => {
-                install::install_one_version(name, version, concurrency, keep_download)
+                cmds::install::install_one_version(name, version, concurrency, keep_download)
             }
             _ => unreachable!(),
         },
-        Commands::Uninstall { name, version } => install::uninstall(name, version),
-        Commands::Current { name } => env::current(name),
-        Commands::Where { name, version } => env::wwhere(name, version),
-        Commands::Latest { name, filter } => list::latest(name, filter),
+        Commands::Uninstall { name, version } => cmds::install::uninstall(name, version),
+        Commands::Current { name } => cmds::env::current(name),
+        Commands::Where { name, version } => cmds::env::wwhere(name, version),
+        Commands::Latest { name, filter } => cmds::list::latest(name, filter),
         Commands::List {
             command,
             name,
             filter,
         } => match (command, name) {
-            (Some(ListCommand::All { name, filter }), None) => list::all(name, filter),
-            (None, None) => list::all_installed(),
-            (None, Some(name)) => list::installed(name, filter),
+            (Some(ListCommand::All { name, filter }), None) => cmds::list::all(name, filter),
+            (None, None) => cmds::list::all_installed(),
+            (None, Some(name)) => cmds::list::installed(name, filter),
             _ => unreachable!(),
         },
-        Commands::Global { name, version } => version::global(name, version),
-        Commands::Local { name, version } => version::local(name, version),
-        Commands::Shell { name, version } => version::shell(name, version),
-        Commands::Help { plugin, version } => help::help(plugin, version),
-        Commands::Command(args) => ext::ext(args),
+        Commands::Global { name, version } => cmds::version::global(name, version),
+        Commands::Local { name, version } => cmds::version::local(name, version),
+        Commands::Shell { name, version } => cmds::version::shell(name, version),
+        Commands::Help { plugin, version } => cmds::help::help(plugin, version),
+        Commands::Command(args) => cmds::ext::ext(args),
 
         Commands::Reshim { args } => {
             trace!("Skipping legacy command `reshim` ({args:?})");

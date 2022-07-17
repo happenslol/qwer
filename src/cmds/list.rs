@@ -1,10 +1,11 @@
 use std::fs::{self, DirEntry};
 
 use anyhow::{bail, Result};
-use indicatif::ProgressBar;
 use threadpool::ThreadPool;
 
 use crate::dirs::{get_dir, get_plugin_scripts, INSTALLS_DIR};
+
+use super::util::auto_bar;
 
 pub fn all_installed() -> Result<()> {
     let install_dir = get_dir(INSTALLS_DIR)?;
@@ -75,8 +76,11 @@ fn get_available_versions(
     filter: Option<String>,
 ) -> Result<Vec<String>> {
     let scripts = get_plugin_scripts(name)?;
-    let bar = ProgressBar::new(1);
-    let versions = scripts.list_all(pool)?;
+
+    let bar = auto_bar();
+    let task = scripts.list_all(bar.clone(), pool)?;
+    bar.reset();
+    let versions = task.recv().unwrap()?;
 
     let filtered = if let Some(filter) = filter {
         versions
@@ -91,7 +95,8 @@ fn get_available_versions(
 }
 
 pub fn all(name: String, filter: Option<String>) -> Result<()> {
-    let versions = get_available_versions(&name, filter)?;
+    let pool = ThreadPool::new(1);
+    let versions = get_available_versions(&pool, &name, filter)?;
     if versions.is_empty() {
         bail!("no versions found");
     }
@@ -104,7 +109,8 @@ pub fn all(name: String, filter: Option<String>) -> Result<()> {
 }
 
 pub fn latest(name: String, filter: Option<String>) -> Result<()> {
-    let versions = get_available_versions(&name, filter)?;
+    let pool = ThreadPool::new(1);
+    let versions = get_available_versions(&pool, &name, filter)?;
     if versions.is_empty() {
         bail!("no versions found");
     }

@@ -6,9 +6,9 @@ use std::{
 
 use crate::{
     git,
-    lib::plugins::{parse_short_repo_url, Registry},
+    lib::plugins::{parse_short_repo_url, Registry}, dirs::get_plugin_scripts,
 };
-use anyhow::Result;
+use anyhow::{Result, bail};
 use console::style;
 use log::{info, trace};
 use tabled::{object::Segment, Alignment, Modify, Table, Tabled};

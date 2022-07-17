@@ -4,8 +4,7 @@ use anyhow::{bail, Result};
 use log::trace;
 
 use crate::{
-    dirs::{get_dir, get_plugin_scripts, PLUGINS_DIR},
-    util::print_help_and_exit,
+    dirs::{get_dir, get_plugin_scripts, PLUGINS_DIR}, cmds::util::print_help_and_exit,
 };
 
 pub fn ext(args: Vec<String>) -> Result<()> {

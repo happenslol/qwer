@@ -1,6 +1,7 @@
-use std::io::Write;
+use std::{io::Write, time::Duration};
 
 use clap::IntoApp;
+use indicatif::ProgressBar;
 
 use crate::Cli;
 
@@ -11,4 +12,10 @@ pub fn print_help_and_exit() -> ! {
     let _ = std::io::stdout().lock().flush();
     let _ = std::io::stderr().lock().flush();
     std::process::exit(2);
+}
+
+pub fn auto_bar() -> ProgressBar {
+    let bar = ProgressBar::new(1);
+    bar.enable_steady_tick(Duration::from_millis(200));
+    bar
 }
