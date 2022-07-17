@@ -5,9 +5,9 @@ use super::Shell;
 pub struct Bash;
 
 impl Shell for Bash {
-    fn hook(&self, cmd: &str, hook_fn: &str) -> String {
-        let result = format!(
-            r#"_{hook_fn}() {{
+  fn hook(&self, cmd: &str, hook_fn: &str) -> String {
+    let result = format!(
+      r#"_{hook_fn}() {{
   local previous_exit_status=$?;
   trap -- '' SIGINT;
   eval "$({cmd})";
@@ -17,24 +17,24 @@ impl Shell for Bash {
 if ! [[ "${{PROMPT_COMMAND:-}}" =~ _{hook_fn} ]]; then
   PROMPT_COMMAND="_{hook_fn}${{PROMPT_COMMAND:+;$PROMPT_COMMAND}}"
 fi"#
-        );
+    );
 
-        trace!("inserting hook function into bash:\n{result}");
+    trace!("inserting hook function into bash:\n{result}");
 
-        result
-    }
+    result
+  }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+  use super::*;
 
-    #[test]
-    fn hook_bash() {
-        assert_eq!(
-            Bash.hook("\"./foo\" export bash", "foo_hook"),
-            String::from(
-                r#"_foo_hook() {
+  #[test]
+  fn hook_bash() {
+    assert_eq!(
+      Bash.hook("\"./foo\" export bash", "foo_hook"),
+      String::from(
+        r#"_foo_hook() {
   local previous_exit_status=$?;
   trap -- '' SIGINT;
   eval "$("./foo" export bash)";
@@ -44,7 +44,7 @@ mod tests {
 if ! [[ "${PROMPT_COMMAND:-}" =~ _foo_hook ]]; then
   PROMPT_COMMAND="_foo_hook${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
 fi"#
-            )
-        );
-    }
+      )
+    );
+  }
 }
