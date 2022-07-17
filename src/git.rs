@@ -1,8 +1,15 @@
 use std::path::{Path, PathBuf};
 
 use console::style;
-use log::{info, trace};
+use indicatif::{MultiProgress, ProgressBar};
+use log::trace;
 use thiserror::Error;
+use threadpool::ThreadPool;
+
+use crate::{
+  PROGRESS,
+  process::{run_background, run_foreground, BackgroundProcess, ProcessError},
+};
 
 #[derive(Error, Debug)]
 pub enum GitError {
@@ -17,6 +24,12 @@ pub enum GitError {
 
   #[error("`{0}` is not a git directory")]
   NotAGitDirectory(PathBuf),
+
+  #[error("error while running git command: {0}")]
+  ProcessError(#[from] ProcessError),
+
+  #[error("failed to receive background task result: {0}")]
+  BackgroundError(#[from] flume::RecvError),
 }
 
 pub struct GitRepo {
@@ -37,6 +50,7 @@ impl GitRepo {
   }
 
   pub fn clone<P: AsRef<Path>>(
+    pool: &ThreadPool,
     dir: P,
     url: &str,
     name: &str,
@@ -54,15 +68,30 @@ impl GitRepo {
       args.push(branch);
     }
 
-    info!("Cloning {url}");
-    run("git", &dir, &args)?;
+    run_background(
+      pool,
+      format!("Cloning {name}"),
+      "git",
+      Some(&args),
+      Some(dir.as_ref()),
+      None,
+      |output| output,
+    )?
+    .recv()??;
+
     let work_tree = dir.as_ref().join(name);
     let git_dir = work_tree.join(".git");
 
     Ok(Self { git_dir, work_tree })
   }
 
-  fn run(&self, args: &[&str]) -> Result<String, GitError> {
+  fn git_background<T>(
+    &self,
+    pool: &ThreadPool,
+    message: String,
+    args: &[&str],
+    parse_output: impl FnOnce(String) -> T + Send + 'static,
+  ) -> Result<BackgroundProcess<String>, GitError> {
     let git_dir_str = self.git_dir.to_string_lossy();
     let work_tree_str = self.work_tree.to_string_lossy();
 
@@ -77,86 +106,131 @@ impl GitRepo {
       trace!("Running git command `{args_str}`");
     }
 
-    let output = run("git", &self.git_dir, args_with_dirs)?.trim().to_owned();
-    trace!("git command output:\n{output}");
-
-    Ok(output)
+    Ok(run_background(
+      pool,
+      message,
+      "git",
+      Some(args_with_dirs),
+      Some(&self.git_dir),
+      None,
+      |output| output,
+    )?)
   }
 
-  fn find_remote_default_branch(&self) -> Result<String, GitError> {
-    let output = self.run(&["ls-remote", "--symref", "origin", "HEAD"])?;
+  fn git_foreground<T>(
+    &self,
+    args: &[&str],
+    parse_output: impl FnOnce(String) -> T,
+  ) -> Result<T, GitError> {
+    let git_dir_str = self.git_dir.to_string_lossy();
+    let work_tree_str = self.work_tree.to_string_lossy();
 
-    let result = output.split('\n').collect::<Vec<&str>>()[0]
-      .trim_start_matches("ref: refs/heads/")
-      .trim_end_matches("HEAD")
-      .trim()
-      .to_owned();
+    let args_with_dirs = &[
+      &["--git-dir", &git_dir_str, "--work-tree", &work_tree_str],
+      args,
+    ]
+    .concat();
 
-    trace!("parsed remote default branch as `{result}`");
+    if log::log_enabled!(log::Level::Trace) {
+      let args_str = args_with_dirs.join(" ");
+      trace!("Running git command `{args_str}`");
+    }
 
-    Ok(result)
+    Ok(run_foreground(
+      "git",
+      Some(args_with_dirs),
+      Some(&self.git_dir),
+      None,
+      parse_output,
+    )?)
+  }
+
+  fn find_remote_default_branch(
+    &self,
+    pool: &ThreadPool,
+  ) -> Result<BackgroundProcess<String>, GitError> {
+    Ok(self.git_background(
+      pool,
+      format!("Resolving remote default branch"),
+      &["ls-remote", "--symref", "origin", "HEAD"],
+      |output| {
+        output.split('\n').collect::<Vec<&str>>()[0]
+          .trim_start_matches("ref: refs/heads/")
+          .trim_end_matches("HEAD")
+          .trim()
+          .to_owned()
+      },
+    )?)
   }
 
   fn force_checkout(&self, rref: &str) -> Result<(), GitError> {
-    info!("Checking out {}", style(rref).blue());
-
-    self.run(&[
-      "-c",
-      "advice.detachedHead=false",
-      "checkout",
-      rref,
-      "--force",
-    ])?;
+    self.git_foreground(
+      &[
+        "-c",
+        "advice.detachedHead=false",
+        "checkout",
+        rref,
+        "--force",
+      ],
+      |_| (),
+    )?;
 
     Ok(())
   }
 
   pub fn get_remote_url(&self) -> Result<String, GitError> {
-    self.run(&["remote", "get-url", "origin"])
+    self.git_foreground(&["remote", "get-url", "origin"], |output| output)
   }
 
   pub fn get_head_branch(&self) -> Result<String, GitError> {
-    self.run(&["rev-parse", "--abbrev-ref", "HEAD"])
+    self.git_foreground(&["rev-parse", "--abbrev-ref", "HEAD"], |output| output)
   }
 
   pub fn get_head_ref(&self) -> Result<String, GitError> {
-    self.run(&["rev-parse", "--short", "HEAD"])
+    self.git_foreground(&["rev-parse", "--short", "HEAD"], |output| output)
   }
 
-  pub fn update_to_ref(&self, rref: &str) -> Result<(), GitError> {
-    self.run(&["fetch", "--prune", "origin"])?;
+  pub fn update_to_ref(
+    &self,
+    pool: &ThreadPool,
+    rref: &str,
+  ) -> Result<(), GitError> {
+    self
+      .git_background(
+        pool,
+        format!("Fetching {rref}"),
+        &["fetch", "--prune", "origin"],
+        |_| (),
+      )?
+      .recv()??;
+
     self.force_checkout(rref)?;
     Ok(())
   }
 
-  pub fn update_to_remote_head(&self) -> Result<(), GitError> {
-    info!("Updating to latest remote");
-    let remote_default_branch = self.find_remote_default_branch()?;
+  pub fn update_to_remote_head(
+    &self,
+    pool: &ThreadPool,
+  ) -> Result<(), GitError> {
+    let remote_default_branch = self
+      .find_remote_default_branch(pool)?
+      .recv()??;
 
     trace!("Fetching from remote default branch `{remote_default_branch}`");
     let fetch_arg = format!("{remote_default_branch}:{remote_default_branch}");
-    self.run(&["fetch", "--prune", "--update-head-ok", "origin", &fetch_arg])?;
+    self
+      .git_background(
+        pool,
+        format!("Fetching {remote_default_branch}"),
+        &["fetch", "--prune", "--update-head-ok", "origin", &fetch_arg],
+        |_| (),
+      )?
+      .recv()??;
 
     trace!("Resetting to origin/{remote_default_branch}");
     let remote_ref = format!("origin/{remote_default_branch}");
-    self.run(&["reset", "--hard", &remote_ref])?;
+    self.git_foreground(&["reset", "--hard", &remote_ref], |_| ())?;
 
     Ok(())
   }
-}
-
-fn run<P: AsRef<Path>>(cmd: &str, dir: P, args: &[&str]) -> Result<String, GitError> {
-  let output = duct::cmd(cmd, args)
-    .dir(dir.as_ref())
-    .stderr_to_stdout()
-    .stdout_capture()
-    .unchecked()
-    .run()?;
-
-  let output_str = String::from_utf8(output.stdout)?;
-  if !output.status.success() {
-    return Err(GitError::Command(output_str));
-  }
-
-  Ok(output_str)
 }

@@ -3,7 +3,7 @@ use std::{io::Write, time::Duration};
 use clap::IntoApp;
 use indicatif::ProgressBar;
 
-use crate::Cli;
+use crate::{Cli, PROGRESS};
 
 pub fn print_help_and_exit() -> ! {
   Cli::command().print_help().unwrap();
@@ -17,5 +17,7 @@ pub fn print_help_and_exit() -> ! {
 pub fn auto_bar() -> ProgressBar {
   let bar = ProgressBar::new(1);
   bar.enable_steady_tick(Duration::from_millis(200));
+  PROGRESS.add(bar.clone());
+
   bar
 }

@@ -1,5 +1,6 @@
 use anyhow::{bail, Result};
 use log::trace;
+use threadpool::ThreadPool;
 
 use crate::{
   dirs::{get_dir, get_plugin_scripts, INSTALLS_DIR, TOOL_VERSIONS},
@@ -152,14 +153,14 @@ pub fn current(name: String) -> Result<()> {
   Ok(())
 }
 
-pub fn wwhere(name: String, version: Option<String>) -> Result<()> {
+pub fn wwhere(pool: &ThreadPool, name: String, version: Option<String>) -> Result<()> {
   let scripts = get_plugin_scripts(&name)?;
   if !scripts.plugin_installed() {
     bail!("Plugin `{name}` is not installed");
   }
 
   let version = if let Some(version) = version {
-    scripts.resolve(&version)?
+    scripts.resolve(pool, &version)?.unwrap()
   } else {
     let resolved = find_current_version(&name)?;
     if resolved.is_none() {

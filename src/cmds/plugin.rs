@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-  dirs::get_plugin_scripts,
+  dirs::{get_plugin_scripts, INSTALLS_DIR},
   git,
   plugins::{parse_short_repo_url, Registry},
 };
@@ -13,6 +13,7 @@ use anyhow::{bail, Result};
 use console::style;
 use log::{info, trace};
 use tabled::{object::Segment, Alignment, Modify, Table, Tabled};
+use threadpool::ThreadPool;
 
 use crate::dirs::{get_data_dir, get_dir, PLUGINS_DIR, REGISTRIES_DIR};
 
@@ -38,13 +39,13 @@ fn load_registries() -> Result<HashMap<String, Registry>> {
   Ok(toml::from_str(&contents)?)
 }
 
-fn update_registry(url: &str, name: &str, _force: bool) -> Result<()> {
+fn update_registry(pool: &ThreadPool, url: &str, name: &str, _force: bool) -> Result<()> {
   let registry_dir = get_dir(REGISTRIES_DIR)?.join(name);
 
   if !registry_dir.is_dir() {
     info!("Initializing plugin registry {}", style(name).bold());
     let registries_dir = get_dir(REGISTRIES_DIR)?;
-    git::GitRepo::clone(&registries_dir, url, name, None)?;
+    git::GitRepo::clone(pool, &registries_dir, url, name, None)?;
   } else {
     let mut registries = load_registries()?;
     let last_sync = registries.get(name).map(|reg| reg.last_sync).unwrap_or(0);
@@ -61,7 +62,7 @@ fn update_registry(url: &str, name: &str, _force: bool) -> Result<()> {
 
     info!("Updating plugin registry {}", style(name).bold());
     let repo = git::GitRepo::new(&registry_dir)?;
-    repo.update_to_remote_head()?;
+    repo.update_to_remote_head(pool)?;
 
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
     registries.insert(name.to_owned(), Registry { last_sync: now });
@@ -71,29 +72,27 @@ fn update_registry(url: &str, name: &str, _force: bool) -> Result<()> {
   Ok(())
 }
 
-pub fn add(name: String, git_url: Option<String>) -> Result<()> {
-  todo!()
+pub fn add(pool: &ThreadPool, name: String, git_url: Option<String>) -> Result<()> {
+  let plugin_dir = get_dir(PLUGINS_DIR)?;
+  let add_plugin_dir = plugin_dir.join(&name);
+  if add_plugin_dir.is_dir() {
+      bail!("plugin with name `{name}` is already installed");
+  }
 
-  // let plugin_dir = get_dir(PLUGINS_DIR)?;
-  // let add_plugin_dir = plugin_dir.join(&name);
-  // if add_plugin_dir.is_dir() {
-  //     bail!("plugin with name `{name}` is already installed");
-  // }
-  //
-  // let git_url = match git_url {
-  //     Some(git_url) => git_url,
-  //     None => {
-  //         let registry_dir = get_dir(REGISTRIES_DIR)?.join(DEFAULT_PLUGIN_REGISTRY);
-  //         parse_short_repo_url(registry_dir, &name)?
-  //     }
-  // };
-  //
-  // git::GitRepo::clone(&plugin_dir, &git_url, &name, None)?;
-  //
-  // let scripts = get_plugin_scripts(&name)?;
-  // scripts.post_plugin_add(&git_url)?;
-  //
-  // Ok(())
+  let git_url = match git_url {
+      Some(git_url) => git_url,
+      None => {
+          let registry_dir = get_dir(REGISTRIES_DIR)?.join(DEFAULT_PLUGIN_REGISTRY);
+          parse_short_repo_url(registry_dir, &name)?
+      }
+  };
+
+  git::GitRepo::clone(pool, &plugin_dir, &git_url, &name, None)?;
+
+  let scripts = get_plugin_scripts(&name)?;
+  scripts.post_plugin_add(pool, &git_url)?;
+
+  Ok(())
 }
 
 fn normalize_repo_url(url: &str) -> String {
@@ -121,8 +120,8 @@ struct ListItem {
   rref: Option<String>,
 }
 
-pub fn list(urls: bool, refs: bool) -> Result<()> {
-  update_registry(DEFAULT_PLUGIN_REGISTRY_URL, DEFAULT_PLUGIN_REGISTRY, false)?;
+pub fn list(pool: &ThreadPool, urls: bool, refs: bool) -> Result<()> {
+  update_registry(pool, DEFAULT_PLUGIN_REGISTRY_URL, DEFAULT_PLUGIN_REGISTRY, false)?;
 
   let plugin_dir = get_dir(PLUGINS_DIR)?;
   let plugins = fs::read_dir(&plugin_dir)?
@@ -187,8 +186,8 @@ struct ListAllItem {
   url: String,
 }
 
-pub fn list_all() -> Result<()> {
-  update_registry(DEFAULT_PLUGIN_REGISTRY_URL, DEFAULT_PLUGIN_REGISTRY, false)?;
+pub fn list_all(pool: &ThreadPool) -> Result<()> {
+  update_registry(pool, DEFAULT_PLUGIN_REGISTRY_URL, DEFAULT_PLUGIN_REGISTRY, false)?;
 
   let registry_dir = get_dir(REGISTRIES_DIR)?.join(DEFAULT_PLUGIN_REGISTRY);
   let plugins_dir = get_dir(PLUGINS_DIR)?;
@@ -233,53 +232,49 @@ pub fn list_all() -> Result<()> {
   Ok(())
 }
 
-pub fn remove(name: String) -> Result<()> {
-  todo!()
+pub fn remove(pool: &ThreadPool, name: String) -> Result<()> {
+  let plugin_dir = get_dir(PLUGINS_DIR)?;
+  let remove_plugin_dir = plugin_dir.join(&name);
+  if !remove_plugin_dir.is_dir() {
+      bail!("plugin `{name}` is not installed");
+  }
 
-  // let plugin_dir = get_dir(PLUGINS_DIR)?;
-  // let remove_plugin_dir = plugin_dir.join(&name);
-  // if !remove_plugin_dir.is_dir() {
-  //     bail!("plugin `{name}` is not installed");
-  // }
-  //
-  // let scripts = get_plugin_scripts(&name)?;
-  // scripts.pre_plugin_remove()?;
-  //
-  // fs::remove_dir_all(remove_plugin_dir)?;
-  // fs::remove_dir_all(get_dir(INSTALLS_DIR)?.join(&name))?;
-  //
-  // Ok(())
+  let scripts = get_plugin_scripts(&name)?;
+  scripts.pre_plugin_remove(pool)?;
+
+  fs::remove_dir_all(remove_plugin_dir)?;
+  fs::remove_dir_all(get_dir(INSTALLS_DIR)?.join(&name))?;
+
+  Ok(())
 }
 
-pub fn update(name: String, git_ref: Option<String>) -> Result<()> {
-  todo!()
+pub fn update(pool: &ThreadPool, name: String, git_ref: Option<String>) -> Result<()> {
+  let update_plugin_dir = get_dir(PLUGINS_DIR)?.join(&name);
+  if !update_plugin_dir.is_dir() {
+      bail!("plugin `{name}` is not installed");
+  }
 
-  // let update_plugin_dir = get_dir(PLUGINS_DIR)?.join(&name);
-  // if !update_plugin_dir.is_dir() {
-  //     bail!("plugin `{name}` is not installed");
-  // }
-  //
-  // let repo = git::GitRepo::new(&update_plugin_dir)?;
-  // let prev = repo.get_head_ref()?;
-  //
-  // if let Some(git_ref) = git_ref {
-  //     println!("updating `{name}` to {git_ref}...");
-  //     repo.update_to_ref(&git_ref)?;
-  // } else {
-  //     // TODO: Does update without a ref always mean we
-  //     // want to go to the head ref?
-  //     println!("updating `{name}` to latest version...");
-  //     repo.update_to_remote_head()?;
-  // }
-  //
-  // let scripts = get_plugin_scripts(&name)?;
-  // let post = repo.get_head_ref()?;
-  // scripts.post_plugin_update(&prev, &post)?;
-  //
-  // Ok(())
+  let repo = git::GitRepo::new(&update_plugin_dir)?;
+  let prev = repo.get_head_ref()?;
+
+  if let Some(git_ref) = git_ref {
+      println!("updating `{name}` to {git_ref}...");
+      repo.update_to_ref(pool, &git_ref)?;
+  } else {
+      // TODO: Does update without a ref always mean we
+      // want to go to the head ref?
+      println!("updating `{name}` to latest version...");
+      repo.update_to_remote_head(pool)?;
+  }
+
+  let scripts = get_plugin_scripts(&name)?;
+  let post = repo.get_head_ref()?;
+  scripts.post_plugin_update(pool, &prev, &post)?;
+
+  Ok(())
 }
 
-pub fn update_all() -> Result<()> {
+pub fn update_all(pool: &ThreadPool) -> Result<()> {
   let plugin_dir = get_dir(PLUGINS_DIR)?;
 
   for plugin in fs::read_dir(plugin_dir)? {
@@ -287,13 +282,12 @@ pub fn update_all() -> Result<()> {
 
     let name = plugin.file_name();
     let name = name.to_string_lossy();
-    println!("updating `{name}`...");
 
     let repo = git::GitRepo::new(plugin.path())?;
 
     // TODO: Do we always want to update to the remote head
     // ref here, or skip ones that are pinned?
-    repo.update_to_remote_head()?;
+    repo.update_to_remote_head(pool)?;
   }
 
   Ok(())

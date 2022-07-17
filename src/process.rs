@@ -1,5 +1,6 @@
 use std::{
   collections::{HashMap, HashSet},
+  ffi::OsString,
   fs,
   io::{BufRead, BufReader},
   os::unix::prelude::PermissionsExt,
@@ -10,10 +11,12 @@ use console::style;
 use flume::Receiver;
 use indicatif::ProgressBar;
 use lazy_static::lazy_static;
-use log::trace;
+use log::{trace, info};
 use regex::Regex;
 use thiserror::Error;
 use threadpool::ThreadPool;
+
+use crate::cmds::util::auto_bar;
 
 #[derive(Error, Debug)]
 pub enum ProcessError {
@@ -23,34 +26,49 @@ pub enum ProcessError {
   #[error("failed to read command output")]
   InvalidOutput(#[from] std::string::FromUtf8Error),
 
-  #[error("process returned a non-0 exit code:\n{0}")]
+  #[error("process returned a non-zero exit code:\n{0}")]
   Failed(String),
 }
 
 pub type BackgroundProcess<T> = Receiver<Result<T, ProcessError>>;
 
-pub fn run_background<P: AsRef<Path>, T: 'static + Send>(
-  bar: ProgressBar,
+pub fn run_background<Cmd, T>(
   pool: &ThreadPool,
   message: String,
-  parse_output: fn(String) -> T,
-  script: P,
-  env: &[(&str, &str)],
-) -> Result<BackgroundProcess<T>, ProcessError> {
+  command: Cmd,
+  args: Option<&[&str]>,
+  dir: Option<&Path>,
+  env: Option<&[(&str, &str)]>,
+  parse_output: impl FnOnce(String) -> T + Send + 'static,
+) -> Result<BackgroundProcess<T>, ProcessError>
+where
+  Cmd: Into<OsString> + duct::IntoExecutablePath,
+  T: 'static + Send,
+{
   let (mut stderr_read, stderr_write) = os_pipe::pipe()?;
-  let mut expr = duct::cmd!(script.as_ref())
-    .stdout_capture()
-    .stderr_file(stderr_write)
-    .unchecked();
+  let mut expr = if let Some(args) = args {
+    duct::cmd(command, args)
+  } else {
+    duct::cmd!(command)
+  };
 
-  trace!("Setting env for background process:\n{env:#?}");
-  for (key, val) in env {
-    expr = expr.env(key, val);
+  expr = expr.stdout_capture().stderr_file(stderr_write).unchecked();
+
+  if let Some(path) = dir {
+    expr = expr.dir(path);
+  }
+
+  if let Some(env) = env {
+    trace!("Setting env for background process:\n{env:#?}");
+    for (key, val) in env {
+      expr = expr.env(key, val);
+    }
   }
 
   let (tx, rx) = flume::bounded(1);
-  let reader = BufReader::new(stderr_read).lines();
+  let bar = auto_bar();
 
+  info!("executing");
   pool.execute(move || {
     let handle = match expr.start() {
       Ok(handle) => handle,
@@ -60,7 +78,10 @@ pub fn run_background<P: AsRef<Path>, T: 'static + Send>(
       }
     };
 
+    let reader = BufReader::new(stderr_read).lines();
     let mut lines = Vec::new();
+
+    // TODO: This seems to deadlock
     for line in reader {
       let line = match line {
         Ok(line) => line,
@@ -117,20 +138,36 @@ pub fn run_background<P: AsRef<Path>, T: 'static + Send>(
   Ok(rx)
 }
 
-fn run<P: AsRef<Path>, T>(
-  script: P,
-  parse_output: fn(String) -> T,
-  env: &[(&str, &str)],
-) -> Result<T, ProcessError> {
-  let mut expr = duct::cmd!(script.as_ref())
+pub fn run_foreground<Cmd, T>(
+  command: Cmd,
+  args: Option<&[&str]>,
+  dir: Option<&Path>,
+  env: Option<&[(&str, &str)]>,
+  parse_output: impl FnOnce(String) -> T,
+) -> Result<T, ProcessError>
+where
+  Cmd: Into<OsString> + duct::IntoExecutablePath,
+{
+  let mut expr = if let Some(args) = args {
+    duct::cmd(command, args)
+  } else {
+    duct::cmd!(command)
+  };
+
+  expr = expr
     .stderr_capture()
     .stdout_capture()
     .unchecked();
 
-  trace!("Setting env for process:\n{env:#?}");
+  if let Some(path) = dir {
+    expr = expr.dir(path);
+  }
 
-  for (key, val) in env {
-    expr = expr.env(key, val);
+  if let Some(env) = env {
+    trace!("Setting env for background process:\n{env:#?}");
+    for (key, val) in env {
+      expr = expr.env(key, val);
+    }
   }
 
   let output = expr.run()?;

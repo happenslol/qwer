@@ -4,7 +4,9 @@ use std::{io::Write, path::Path};
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use console::style;
+use indicatif::MultiProgress;
 use log::trace;
+use threadpool::ThreadPool;
 
 use crate::{
   dirs::{get_dir, BIN_DIR},
@@ -206,6 +208,10 @@ fn assert_running_qwer(is_asdf: bool) -> Result<()> {
   Ok(())
 }
 
+lazy_static::lazy_static! {
+  pub static ref PROGRESS: MultiProgress = MultiProgress::new();
+}
+
 fn main() -> Result<()> {
   env_logger::Builder::new()
     .target(env_logger::Target::Stderr)
@@ -238,6 +244,8 @@ fn main() -> Result<()> {
     trace!("Running as asdf ({self_executable:?})");
   }
 
+  let pool = ThreadPool::new(1);
+
   match Cli::parse().command {
     Commands::Hook { shell } => {
       trace!("Running {} hook", shell.name());
@@ -265,23 +273,23 @@ fn main() -> Result<()> {
       Ok(())
     }
     Commands::Plugin { command } => match command {
-      PluginCommand::Add { name, git_url } => cmds::plugin::add(name, git_url),
+      PluginCommand::Add { name, git_url } => cmds::plugin::add(&pool, name, git_url),
       PluginCommand::List {
         command,
         urls,
         refs,
       } => match command {
-        Some(PluginListCommand::All) => cmds::plugin::list_all(),
-        None => cmds::plugin::list(urls, refs),
+        Some(PluginListCommand::All) => cmds::plugin::list_all(&pool),
+        None => cmds::plugin::list(&pool, urls, refs),
       },
-      PluginCommand::Remove { name } => cmds::plugin::remove(name),
+      PluginCommand::Remove { name } => cmds::plugin::remove(&pool, name),
       PluginCommand::Update {
         command,
         name,
         git_ref,
       } => match (command, name) {
-        (Some(PluginUpdateCommand::All), ..) => cmds::plugin::update_all(),
-        (None, Some(name)) => cmds::plugin::update(name, git_ref),
+        (Some(PluginUpdateCommand::All), ..) => cmds::plugin::update_all(&pool),
+        (None, Some(name)) => cmds::plugin::update(&pool, name, git_ref),
         _ => unreachable!(),
       },
     },
@@ -300,7 +308,7 @@ fn main() -> Result<()> {
     },
     Commands::Uninstall { name, version } => cmds::install::uninstall(name, version),
     Commands::Current { name } => cmds::env::current(name),
-    Commands::Where { name, version } => cmds::env::wwhere(name, version),
+    Commands::Where { name, version } => cmds::env::wwhere(&pool, name, version),
     Commands::Latest { name, filter } => cmds::list::latest(name, filter),
     Commands::List {
       command,
@@ -312,9 +320,9 @@ fn main() -> Result<()> {
       (None, Some(name)) => cmds::list::installed(name, filter),
       _ => unreachable!(),
     },
-    Commands::Global { name, version } => cmds::version::global(name, version),
-    Commands::Local { name, version } => cmds::version::local(name, version),
-    Commands::Shell { name, version } => cmds::version::shell(name, version),
+    Commands::Global { name, version } => cmds::version::global(&pool, name, version),
+    Commands::Local { name, version } => cmds::version::local(&pool, name, version),
+    Commands::Shell { name, version } => cmds::version::shell(&pool, name, version),
     Commands::Help { plugin, version } => cmds::help::help(plugin, version),
     Commands::Command(args) => cmds::ext::ext(args),
 

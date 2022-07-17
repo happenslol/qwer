@@ -76,11 +76,7 @@ fn get_available_versions(
   filter: Option<String>,
 ) -> Result<Vec<String>> {
   let scripts = get_plugin_scripts(name)?;
-
-  let bar = auto_bar();
-  let task = scripts.list_all(bar.clone(), pool)?;
-  bar.reset();
-  let versions = task.recv().unwrap()?;
+  let versions = scripts.list_all(pool)?;
 
   let filtered = if let Some(filter) = filter {
     versions
