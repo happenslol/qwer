@@ -6,13 +6,17 @@ use clap::{Parser, Subcommand};
 use console::style;
 use log::trace;
 
-use crate::{shell::Shell, dirs::{get_dir, BIN_DIR}};
+use crate::{
+  dirs::{get_dir, BIN_DIR},
+  shell::Shell,
+};
 
 mod cmds;
 mod dirs;
-mod git;
 mod env;
+mod git;
 mod plugins;
+mod process;
 mod scripts;
 mod shell;
 mod versions;

@@ -17,6 +17,7 @@ use threadpool::ThreadPool;
 
 use crate::{
   env::{Env, IGNORED_ENV_VARS},
+  process::{run_background, BackgroundProcess, ProcessError},
   versions::Version,
 };
 
@@ -63,6 +64,9 @@ pub enum PluginScriptError {
 
   #[error("no versions were found for query `{0}`")]
   NoMatchingVersionsFound(String),
+
+  #[error("error while running process: {0}")]
+  ProcessError(#[from] ProcessError),
 }
 
 pub struct PluginScripts {
@@ -72,8 +76,6 @@ pub struct PluginScripts {
   download_dir: PathBuf,
   script_env_path: String,
 }
-
-type BackgroundScriptResult<T> = Result<Receiver<Result<T, PluginScriptError>>, PluginScriptError>;
 
 impl PluginScripts {
   pub fn new<Plugin, Install, Download>(
@@ -113,6 +115,16 @@ impl PluginScripts {
     })
   }
 
+  fn merge_env<'a>(&'a self, env: &[(&'a str, &'a str)]) -> Vec<(&'a str, &'a str)> {
+    let mut full_env = vec![
+      ("PATH", self.script_env_path.as_str()),
+      ("QWER_LOG", "trace"),
+    ];
+
+    full_env.extend_from_slice(env);
+    full_env
+  }
+
   fn run_background_script<P: AsRef<Path>, T: 'static + Send>(
     &self,
     bar: ProgressBar,
@@ -121,95 +133,10 @@ impl PluginScripts {
     parse_output: fn(String) -> T,
     script: P,
     env: &[(&str, &str)],
-  ) -> BackgroundScriptResult<T> {
-    if log::log_enabled!(log::Level::Trace) {
-      let script_path = script.as_ref();
-      let contents = fs::read_to_string(&script_path).unwrap_or_else(|_| "".to_owned());
-      trace!("Running script `{script_path:?}` with content: \n{contents}");
-    }
-
-    let (mut stderr_read, stderr_write) = match os_pipe::pipe() {
-      Ok(result) => result,
-      Err(_) => todo!(),
-    };
-
-    let mut expr = duct::cmd!(script.as_ref())
-      .env("PATH", &self.script_env_path)
-      .env("QWER_LOG", "trace")
-      .stdout_capture()
-      .stderr_file(stderr_write)
-      .unchecked();
-
-    for (key, val) in env {
-      expr = expr.env(key, val);
-    }
-
-    let (tx, rx) = flume::bounded(1);
-    let reader = BufReader::new(stderr_read).lines();
-
-    pool.execute(move || {
-      let handle = match expr.start() {
-        Ok(handle) => handle,
-        Err(err) => {
-          let _ = tx.send(Err(err.into()));
-          return;
-        }
-      };
-
-      let mut lines = Vec::new();
-      for line in reader {
-        let line = match line {
-          Ok(line) => line,
-          Err(_) => continue,
-        };
-
-        lines.push(line);
-        let mut last_lines = lines
-          .iter()
-          .filter(|line| !line.is_empty())
-          .rev()
-          .take(3)
-          .map(|line| format!("      {}", line))
-          .collect::<Vec<_>>();
-
-        last_lines.reverse();
-        if last_lines.is_empty() {
-          continue;
-        }
-
-        bar.set_message(format!(
-          "{}\n{}",
-          message,
-          style(last_lines.join("\n")).dim()
-        ));
-      }
-
-      let output = match handle.wait() {
-        Ok(output) => output,
-        Err(err) => {
-          let _ = tx.send(Err(err.into()));
-          return;
-        }
-      };
-
-      let output_str = match String::from_utf8(output.stdout.clone()) {
-        Ok(output_str) => output_str,
-        Err(err) => {
-          let _ = tx.send(Err(err.into()));
-          return;
-        }
-      };
-
-      if !output.status.success() {
-        let _ = tx.send(Err(PluginScriptError::ScriptFailed(output_str)));
-        return;
-      }
-
-      let parsed = parse_output(output_str);
-      let _ = tx.send(Ok(parsed));
-    });
-
-    Ok(rx)
+  ) -> Result<BackgroundProcess<T>, ProcessError> {
+    log_script(script.as_ref());
+    let env = self.merge_env(env);
+    run_background(bar, pool, message, parse_output, script, &env)
   }
 
   fn run_script<P: AsRef<Path>>(
@@ -267,11 +194,11 @@ impl PluginScripts {
     &self,
     bar: ProgressBar,
     pool: &ThreadPool,
-  ) -> BackgroundScriptResult<Vec<String>> {
+  ) -> Result<BackgroundProcess<Vec<String>>, PluginScriptError> {
     let list_all_script = self.plugin_dir.join("bin/list-all");
     self.assert_script_exists(&list_all_script)?;
     let message = style("Running ...").bold().to_string();
-    self.run_background_script(bar, pool, message, parse_list_all, &list_all_script, &[])
+    Ok(self.run_background_script(bar, pool, message, parse_list_all, &list_all_script, &[])?)
   }
 
   pub fn plugin_installed(&self) -> bool {
@@ -286,11 +213,11 @@ impl PluginScripts {
     &self,
     bar: ProgressBar,
     pool: &ThreadPool,
-  ) -> BackgroundScriptResult<Option<Version>> {
+  ) -> Result<BackgroundProcess<Option<Version>>, PluginScriptError> {
     let list_all_script = self.plugin_dir.join("bin/list-all");
     self.assert_script_exists(&list_all_script)?;
     let message = style("Running ...").bold().to_string();
-    self.run_background_script(bar, pool, message, parse_find_latest, &list_all_script, &[])
+    Ok(self.run_background_script(bar, pool, message, parse_find_latest, &list_all_script, &[])?)
   }
 
   pub fn has_download(&self) -> bool {
@@ -302,7 +229,7 @@ impl PluginScripts {
     bar: ProgressBar,
     pool: &ThreadPool,
     version: &Version,
-  ) -> Option<BackgroundScriptResult<()>> {
+  ) -> Option<Result<BackgroundProcess<()>, PluginScriptError>> {
     if version == &Version::System {
       return None;
     }
@@ -329,7 +256,7 @@ impl PluginScripts {
     };
 
     let message = style("Running ...").bold().to_string();
-    Some(self.run_background_script(
+    match self.run_background_script(
       bar,
       pool,
       message,
@@ -341,7 +268,10 @@ impl PluginScripts {
         (ASDF_INSTALL_PATH, &version_install_dir.to_string_lossy()),
         (ASDF_DOWNLOAD_PATH, &version_download_dir.to_string_lossy()),
       ],
-    ))
+    ) {
+      Ok(process) => Some(Ok(process)),
+      Err(err) => return Some(Err(err.into())),
+    }
   }
 
   pub fn install(
@@ -350,7 +280,7 @@ impl PluginScripts {
     pool: &ThreadPool,
     version: &Version,
     concurrency: Option<usize>,
-  ) -> Option<BackgroundScriptResult<String>> {
+  ) -> Option<Result<BackgroundProcess<String>, PluginScriptError>> {
     trace!(
       "Installing version {version:?} for plugin `{:?}` to `{:?}`",
       self.plugin_dir,
@@ -388,7 +318,7 @@ impl PluginScripts {
       .unwrap_or(1);
 
     let message = style("Running ...").bold().to_string();
-    Some(self.run_background_script(
+    match self.run_background_script(
       bar,
       pool,
       message,
@@ -401,7 +331,10 @@ impl PluginScripts {
         (ASDF_DOWNLOAD_PATH, &version_download_dir.to_string_lossy()),
         (ASDF_CONCURRENCY, &concurrency.to_string()),
       ],
-    ))
+    ) {
+      Ok(process) => Some(Ok(process)),
+      Err(err) => return Some(Err(err.into())),
+    }
   }
 
   pub fn has_uninstall(&self) -> bool {
@@ -431,7 +364,7 @@ impl PluginScripts {
     bar: ProgressBar,
     pool: &ThreadPool,
     version: &Version,
-  ) -> Option<BackgroundScriptResult<String>> {
+  ) -> Option<Result<BackgroundProcess<String>, PluginScriptError>> {
     trace!(
       "Uninstalling version {version:?} for plugin `{:?}` from `{:?}`",
       self.plugin_dir,
@@ -459,7 +392,7 @@ impl PluginScripts {
     };
 
     let message = style("Running ...").bold().to_string();
-    Some(self.run_background_script(
+    match self.run_background_script(
       bar,
       pool,
       message,
@@ -470,7 +403,10 @@ impl PluginScripts {
         (ASDF_INSTALL_VERSION, version_str),
         (ASDF_INSTALL_PATH, &version_install_dir.to_string_lossy()),
       ],
-    ))
+    ) {
+      Ok(process) => Some(Ok(process)),
+      Err(err) => return Some(Err(err.into())),
+    }
   }
 
   // Help strings
@@ -679,26 +615,26 @@ impl PluginScripts {
     &self,
     bar: ProgressBar,
     pool: &ThreadPool,
-  ) -> BackgroundScriptResult<Option<Version>> {
+  ) -> Result<BackgroundProcess<Option<Version>>, PluginScriptError> {
     let path = self.plugin_dir.join("bin/latest-stable");
     match path.is_file() {
       true => {
         let message = style("Running ...").bold().to_string();
-        self.run_background_script(bar, pool, message, parse_latest_stable, &path, &[])
+        Ok(self.run_background_script(bar, pool, message, parse_latest_stable, &path, &[])?)
       }
       false => {
         let list_all_script = self.plugin_dir.join("bin/list-all");
         let message = style("Running ...").bold().to_string();
 
         self.assert_script_exists(&list_all_script)?;
-        self.run_background_script(
+        Ok(self.run_background_script(
           bar,
           pool,
           message,
           parse_find_latest_stable,
           &list_all_script,
           &[],
-        )
+        )?)
       }
     }
   }
@@ -710,21 +646,24 @@ impl PluginScripts {
     bar: ProgressBar,
     pool: &ThreadPool,
     install_url: &str,
-  ) -> Option<BackgroundScriptResult<()>> {
+  ) -> Option<Result<BackgroundProcess<()>, PluginScriptError>> {
     let path = self.plugin_dir.join("bin/post-plugin-add");
     if !path.is_file() {
       return None;
     }
 
     let message = style("Running ...").bold().to_string();
-    Some(self.run_background_script(
+    match self.run_background_script(
       bar,
       pool,
       message,
       parse_output_none,
       &path,
       &[(ASDF_PLUGIN_SOURCE_URL, install_url)],
-    ))
+    ) {
+      Ok(process) => Some(Ok(process)),
+      Err(err) => return Some(Err(err.into())),
+    }
   }
 
   pub fn post_plugin_update(
@@ -733,14 +672,14 @@ impl PluginScripts {
     pool: &ThreadPool,
     prev: &str,
     post: &str,
-  ) -> Option<BackgroundScriptResult<()>> {
+  ) -> Option<Result<BackgroundProcess<()>, PluginScriptError>> {
     let path = self.plugin_dir.join("bin/post-plugin-add");
     if !path.is_file() {
       return None;
     }
 
     let message = style("Running ...").bold().to_string();
-    Some(self.run_background_script(
+    match self.run_background_script(
       bar,
       pool,
       message,
@@ -751,28 +690,34 @@ impl PluginScripts {
         (ASDF_PLUGIN_PREV_REF, prev),
         (ASDF_PLUGIN_POST_REF, post),
       ],
-    ))
+    ) {
+      Ok(process) => Some(Ok(process)),
+      Err(err) => return Some(Err(err.into())),
+    }
   }
 
   pub fn pre_plugin_remove(
     &self,
     bar: ProgressBar,
     pool: &ThreadPool,
-  ) -> Option<BackgroundScriptResult<()>> {
+  ) -> Option<Result<BackgroundProcess<()>, PluginScriptError>> {
     let path = self.plugin_dir.join("bin/post-plugin-add");
     if !path.is_file() {
       return None;
     }
 
     let message = style("Running ...").bold().to_string();
-    Some(self.run_background_script(
+    match self.run_background_script(
       bar,
       pool,
       message,
       parse_output_none,
       &path,
       &[(ASDF_PLUGIN_PATH, &*self.plugin_dir.to_string_lossy())],
-    ))
+    ) {
+      Ok(process) => Some(Ok(process)),
+      Err(err) => return Some(Err(err.into())),
+    }
   }
 
   // Extensions
@@ -887,4 +832,13 @@ fn parse_find_latest_stable(output: String) -> Option<Version> {
 
 fn parse_latest_stable(output: String) -> Option<Version> {
   Some(Version::parse(output.trim()))
+}
+
+fn log_script(path: &Path) {
+  if !log::log_enabled!(log::Level::Trace) {
+    return;
+  }
+
+  let contents = fs::read_to_string(&path).unwrap_or_else(|_| "".to_owned());
+  trace!("Running script `{path:?}` with content: \n{contents}");
 }
