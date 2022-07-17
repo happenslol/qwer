@@ -4,10 +4,8 @@ use anyhow::{anyhow, bail, Result};
 
 use crate::{
   dirs::{get_plugin_scripts, TOOL_VERSIONS},
-  lib::{
-    shell::{Bash, Shell, ShellState},
-    versions::Versions,
-  },
+  shell::{Bash, Shell, ShellState},
+  versions::Versions,
 };
 
 fn use_version_for_dir(name: String, version: String, path: PathBuf) -> Result<()> {

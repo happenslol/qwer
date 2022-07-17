@@ -15,7 +15,7 @@ use regex::Regex;
 use thiserror::Error;
 use threadpool::ThreadPool;
 
-use crate::lib::{
+use crate::{
   env::{Env, IGNORED_ENV_VARS},
   versions::Version,
 };

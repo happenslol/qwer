@@ -1,16 +1,20 @@
 use std::{io::Write, path::Path};
 
-use crate::dirs::{get_dir, BIN_DIR};
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use console::style;
-use lib::shell::{self, Shell};
 use log::trace;
+
+use crate::{shell::Shell, dirs::{get_dir, BIN_DIR}};
 
 mod cmds;
 mod dirs;
 mod git;
-mod lib;
+mod env;
+mod plugins;
+mod scripts;
+mod shell;
+mod versions;
 
 #[derive(Debug, Parser)]
 #[clap(name = "qwer", author, version, about)]

@@ -7,7 +7,7 @@ use std::{
 use crate::{
   dirs::get_plugin_scripts,
   git,
-  lib::plugins::{parse_short_repo_url, Registry},
+  plugins::{parse_short_repo_url, Registry},
 };
 use anyhow::{bail, Result};
 use console::style;

@@ -5,7 +5,7 @@ use log::{info, trace};
 
 use crate::{
   dirs::{get_plugin_scripts, TOOL_VERSIONS},
-  lib::versions::{Version, Versions},
+  versions::{Version, Versions},
 };
 
 pub fn install_all(concurrency: Option<usize>, keep_download: bool) -> Result<()> {

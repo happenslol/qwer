@@ -2,7 +2,7 @@ use std::{fs, path::PathBuf};
 
 use anyhow::{anyhow, bail, Result};
 
-use crate::lib::scripts::PluginScripts;
+use crate::scripts::PluginScripts;
 
 pub const REGISTRIES_DIR: &str = "registries";
 pub const PLUGINS_DIR: &str = "plugins";

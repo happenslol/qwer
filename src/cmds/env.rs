@@ -3,11 +3,9 @@ use log::trace;
 
 use crate::{
   dirs::{get_dir, get_plugin_scripts, INSTALLS_DIR, TOOL_VERSIONS},
-  lib::{
-    env::Env,
-    shell::ShellState,
-    versions::{Version, Versions},
-  },
+  env::Env,
+  shell::ShellState,
+  versions::{Version, Versions},
 };
 
 const QWER_STATE: &str = "QWER_STATE";
