@@ -7,8 +7,8 @@ use thiserror::Error;
 use threadpool::ThreadPool;
 
 use crate::{
-  PROGRESS,
   process::{run_background, run_foreground, BackgroundProcess, ProcessError},
+  PROGRESS,
 };
 
 #[derive(Error, Debug)]
@@ -91,7 +91,10 @@ impl GitRepo {
     message: String,
     args: &[&str],
     parse_output: impl FnOnce(String) -> T + Send + 'static,
-  ) -> Result<BackgroundProcess<String>, GitError> {
+  ) -> Result<BackgroundProcess<T>, GitError>
+  where
+    T: 'static + Send,
+  {
     let git_dir_str = self.git_dir.to_string_lossy();
     let work_tree_str = self.work_tree.to_string_lossy();
 
@@ -113,7 +116,7 @@ impl GitRepo {
       Some(args_with_dirs),
       Some(&self.git_dir),
       None,
-      |output| output,
+      parse_output,
     )?)
   }
 
@@ -152,13 +155,17 @@ impl GitRepo {
     Ok(self.git_background(
       pool,
       format!("Resolving remote default branch"),
-      &["ls-remote", "--symref", "origin", "HEAD"],
+      &["remote", "show", "origin"],
       |output| {
-        output.split('\n').collect::<Vec<&str>>()[0]
-          .trim_start_matches("ref: refs/heads/")
-          .trim_end_matches("HEAD")
+        output
+          .split('\n')
+          .find(|line| line.trim().starts_with("HEAD branch:"))
+          // Default to main if nothing is found
+          .unwrap_or("main")
           .trim()
-          .to_owned()
+          .trim_start_matches("HEAD branch:")
+          .trim()
+          .to_string()
       },
     )?)
   }
@@ -190,11 +197,7 @@ impl GitRepo {
     self.git_foreground(&["rev-parse", "--short", "HEAD"], |output| output)
   }
 
-  pub fn update_to_ref(
-    &self,
-    pool: &ThreadPool,
-    rref: &str,
-  ) -> Result<(), GitError> {
+  pub fn update_to_ref(&self, pool: &ThreadPool, rref: &str) -> Result<(), GitError> {
     self
       .git_background(
         pool,
@@ -208,13 +211,8 @@ impl GitRepo {
     Ok(())
   }
 
-  pub fn update_to_remote_head(
-    &self,
-    pool: &ThreadPool,
-  ) -> Result<(), GitError> {
-    let remote_default_branch = self
-      .find_remote_default_branch(pool)?
-      .recv()??;
+  pub fn update_to_remote_head(&self, pool: &ThreadPool) -> Result<(), GitError> {
+    let remote_default_branch = self.find_remote_default_branch(pool)?.recv()??;
 
     trace!("Fetching from remote default branch `{remote_default_branch}`");
     let fetch_arg = format!("{remote_default_branch}:{remote_default_branch}");

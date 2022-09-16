@@ -11,7 +11,7 @@ use console::style;
 use flume::Receiver;
 use indicatif::ProgressBar;
 use lazy_static::lazy_static;
-use log::{trace, info};
+use log::{info, trace};
 use regex::Regex;
 use thiserror::Error;
 use threadpool::ThreadPool;
@@ -45,14 +45,13 @@ where
   Cmd: Into<OsString> + duct::IntoExecutablePath,
   T: 'static + Send,
 {
-  let (mut stderr_read, stderr_write) = os_pipe::pipe()?;
   let mut expr = if let Some(args) = args {
     duct::cmd(command, args)
   } else {
     duct::cmd!(command)
   };
 
-  expr = expr.stdout_capture().stderr_file(stderr_write).unchecked();
+  expr = expr.stdout_capture().unchecked();
 
   if let Some(path) = dir {
     expr = expr.dir(path);
@@ -68,9 +67,12 @@ where
   let (tx, rx) = flume::bounded(1);
   let bar = auto_bar();
 
-  info!("executing");
+  let (mut stderr_read, stderr_write) = os_pipe::pipe()?;
+
   pool.execute(move || {
-    let handle = match expr.start() {
+    // This moves stderr_write into the temporary duct::Expression that drops at the end of
+    // this statement. That's important; retaining it would deadlock the read loop below.
+    let handle = match expr.stderr_file(stderr_write).start() {
       Ok(handle) => handle,
       Err(err) => {
         let _ = tx.send(Err(err.into()));
@@ -81,7 +83,6 @@ where
     let reader = BufReader::new(stderr_read).lines();
     let mut lines = Vec::new();
 
-    // TODO: This seems to deadlock
     for line in reader {
       let line = match line {
         Ok(line) => line,
@@ -127,7 +128,21 @@ where
 
     trace!("Got background process output:\n{output_str}");
     if !output.status.success() {
-      let _ = tx.send(Err(ProcessError::Failed(output_str)));
+      let stderr_output = lines.join("\n");
+      let mut combined = String::new();
+      if !output_str.is_empty() {
+        combined.push_str(&output_str);
+      }
+
+      if !stderr_output.is_empty() {
+        if !combined.is_empty() {
+          combined.push('\n');
+        }
+
+        combined.push_str(&stderr_output);
+      }
+
+      let _ = tx.send(Err(ProcessError::Failed(combined)));
       return;
     }
 
@@ -154,10 +169,7 @@ where
     duct::cmd!(command)
   };
 
-  expr = expr
-    .stderr_capture()
-    .stdout_capture()
-    .unchecked();
+  expr = expr.stderr_capture().stdout_capture().unchecked();
 
   if let Some(path) = dir {
     expr = expr.dir(path);
