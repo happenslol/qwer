@@ -88,9 +88,8 @@ fn get_available_versions(
   Ok(filtered)
 }
 
-pub fn all(name: String, filter: Option<String>) -> Result<()> {
-  let pool = ThreadPool::new(1);
-  let versions = get_available_versions(&pool, &name, filter)?;
+pub fn all(pool: &ThreadPool, name: String, filter: Option<String>) -> Result<()> {
+  let versions = get_available_versions(pool, &name, filter)?;
   if versions.is_empty() {
     bail!("No versions found");
   }
@@ -102,9 +101,8 @@ pub fn all(name: String, filter: Option<String>) -> Result<()> {
   Ok(())
 }
 
-pub fn latest(name: String, filter: Option<String>) -> Result<()> {
-  let pool = ThreadPool::new(1);
-  let versions = get_available_versions(&pool, &name, filter)?;
+pub fn latest(pool: &ThreadPool, name: String, filter: Option<String>) -> Result<()> {
+  let versions = get_available_versions(pool, &name, filter)?;
   if versions.is_empty() {
     bail!("No versions found");
   }

@@ -33,11 +33,13 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 #[clap(disable_help_subcommand(true), allow_external_subcommands(true))]
 enum Commands {
+  #[clap(hide = true)]
   Hook {
     #[clap(subcommand)]
     shell: ShellOptions,
   },
 
+  #[clap(hide = true)]
   Export {
     #[clap(subcommand)]
     shell: ShellOptions,
@@ -46,6 +48,11 @@ enum Commands {
   Plugin {
     #[clap(subcommand)]
     command: PluginCommand,
+  },
+
+  Use {
+    name: Option<String>,
+    version: Option<String>,
   },
 
   Install {
@@ -268,6 +275,21 @@ fn main() -> Result<()> {
 
       Ok(())
     }
+    Commands::Use { name, version } => {
+      let plugin_to_use = if let Some(name) = name {
+        name
+      } else {
+        cmds::uuse::select_plugin(&pool)
+      };
+
+      let version_to_install = if let Some(version) = version {
+        version
+      } else {
+        cmds::uuse::select_version(&pool)
+      };
+
+      Ok(())
+    }
     Commands::Plugin { command } => match command {
       PluginCommand::Add { name, git_url } => cmds::plugin::add(&pool, name, git_url),
       PluginCommand::List {
@@ -305,13 +327,13 @@ fn main() -> Result<()> {
     Commands::Uninstall { name, version } => cmds::install::uninstall(&pool, name, version),
     Commands::Current { name } => cmds::env::current(name),
     Commands::Where { name, version } => cmds::env::wwhere(&pool, name, version),
-    Commands::Latest { name, filter } => cmds::list::latest(name, filter),
+    Commands::Latest { name, filter } => cmds::list::latest(&pool, name, filter),
     Commands::List {
       command,
       name,
       filter,
     } => match (command, name) {
-      (Some(ListCommand::All { name, filter }), None) => cmds::list::all(name, filter),
+      (Some(ListCommand::All { name, filter }), None) => cmds::list::all(&pool, name, filter),
       (None, None) => cmds::list::all_installed(),
       (None, Some(name)) => cmds::list::installed(name, filter),
       _ => unreachable!(),

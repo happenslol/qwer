@@ -29,6 +29,7 @@ serde = { version = "1.0.137", features = ["derive"] }
 flume = "0.10.13"
 indicatif = { git = "https://github.com/happenslol/indicatif", branch = "improve-multiline-progress-support" }
 os_pipe = "1.0.1"
+dialoguer = { version = "0.10.2", features = ["fuzzy-select"] }
 
 [dev-dependencies]
 tempfile = "3.3.0"
