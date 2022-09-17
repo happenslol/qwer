@@ -5,7 +5,7 @@ use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use console::style;
 use indicatif::MultiProgress;
-use log::trace;
+use log::{error, trace};
 use threadpool::ThreadPool;
 
 use crate::{
@@ -218,19 +218,15 @@ fn main() -> Result<()> {
     .filter_level(log::LevelFilter::Info)
     .parse_env("QWER_LOG")
     .format(|buf, record| {
-      if let log::Level::Info = record.level() {
-        writeln!(buf, "{}", record.args())
-      } else {
-        let level = match record.level() {
-          log::Level::Error => style("error: ").bold().red(),
-          log::Level::Warn => style("warn: ").bold().yellow(),
-          log::Level::Debug => style("debug: ").bold().blue(),
-          log::Level::Trace => style("trace: ").bold().cyan(),
-          _ => unreachable!(),
-        };
+      let level = match record.level() {
+        log::Level::Info => style("==>").bold().cyan(),
+        log::Level::Error => style("error:").bold().red(),
+        log::Level::Warn => style("warn:").bold().yellow(),
+        log::Level::Debug => style("debug:").bold().blue(),
+        log::Level::Trace => style("trace:").bold().cyan(),
+      };
 
-        writeln!(buf, "{} {}", level, record.args())
-      }
+      writeln!(buf, "{} {}", level, record.args())
     })
     .init();
 
@@ -246,7 +242,7 @@ fn main() -> Result<()> {
 
   let pool = ThreadPool::new(1);
 
-  match Cli::parse().command {
+  let result = match Cli::parse().command {
     Commands::Hook { shell } => {
       trace!("Running {} hook", shell.name());
       assert_running_qwer(is_asdf)?;
@@ -299,14 +295,14 @@ fn main() -> Result<()> {
       concurrency,
       keep_download,
     } => match (name, version) {
-      (None, None) => cmds::install::install_all(concurrency, keep_download),
-      (Some(name), None) => cmds::install::install_one(name, concurrency, keep_download),
+      (None, None) => cmds::install::install_all(&pool, concurrency, keep_download),
+      (Some(name), None) => cmds::install::install_one(&pool, name, concurrency, keep_download),
       (Some(name), Some(version)) => {
-        cmds::install::install_one_version(name, version, concurrency, keep_download)
+        cmds::install::install_one_version(&pool, name, version, concurrency, keep_download)
       }
       _ => unreachable!(),
     },
-    Commands::Uninstall { name, version } => cmds::install::uninstall(name, version),
+    Commands::Uninstall { name, version } => cmds::install::uninstall(&pool, name, version),
     Commands::Current { name } => cmds::env::current(name),
     Commands::Where { name, version } => cmds::env::wwhere(&pool, name, version),
     Commands::Latest { name, filter } => cmds::list::latest(name, filter),
@@ -334,5 +330,12 @@ fn main() -> Result<()> {
       trace!("Skipping legacy command `which` ({args:?})");
       Ok(())
     }
+  };
+
+  match result {
+    Err(err) => error!("{}", err),
+    _ => {}
   }
+
+  Ok(())
 }

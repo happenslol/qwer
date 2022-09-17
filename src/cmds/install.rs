@@ -1,14 +1,20 @@
 use std::collections::HashMap;
 
 use anyhow::{bail, Result};
+use console::style;
 use log::{info, trace};
+use threadpool::ThreadPool;
 
 use crate::{
   dirs::{get_plugin_scripts, TOOL_VERSIONS},
   versions::{Version, Versions},
 };
 
-pub fn install_all(concurrency: Option<usize>, keep_download: bool) -> Result<()> {
+pub fn install_all(
+  pool: &ThreadPool,
+  concurrency: Option<usize>,
+  keep_download: bool,
+) -> Result<()> {
   let to_install = gather_versions()?;
   trace!("Installing versions:\n{to_install:#?}");
 
@@ -22,22 +28,27 @@ pub fn install_all(concurrency: Option<usize>, keep_download: bool) -> Result<()
       continue;
     }
 
-    install(plugin, &version.raw(), concurrency, keep_download)?;
+    install(pool, plugin, &version.raw(), concurrency, keep_download)?;
   }
 
   Ok(())
 }
 
-pub fn install_one(name: String, concurrency: Option<usize>, keep_download: bool) -> Result<()> {
+pub fn install_one(
+  pool: &ThreadPool,
+  name: String,
+  concurrency: Option<usize>,
+  keep_download: bool,
+) -> Result<()> {
   let versions = gather_versions()?;
   if !versions.contains_key(&name) {
-    bail!("tool `{name}` is not defined in any version files");
+    bail!("Tool `{name}` is not defined in any version files");
   }
 
   let to_install = &versions[&name];
   trace!("Installing version: {name} {to_install:?}");
 
-  install(&name, &to_install.raw(), concurrency, keep_download)
+  install(pool, &name, &to_install.raw(), concurrency, keep_download)
 }
 
 fn gather_versions() -> Result<HashMap<String, Version>> {
@@ -63,73 +74,81 @@ fn gather_versions() -> Result<HashMap<String, Version>> {
 }
 
 pub fn install_one_version(
+  pool: &ThreadPool,
   name: String,
   version: String,
   concurrency: Option<usize>,
   keep_download: bool,
 ) -> Result<()> {
-  install(&name, &version, concurrency, keep_download)
+  install(pool, &name, &version, concurrency, keep_download)
 }
 
 fn install(
+  pool: &ThreadPool,
   name: &str,
   version: &str,
   concurrency: Option<usize>,
   keep_download: bool,
 ) -> Result<()> {
-  todo!()
+  let scripts = get_plugin_scripts(name)?;
+  let resolved = scripts.resolve(pool, version)?;
+  if resolved.is_none() {
+    bail!(
+      "Failed to resolve version {} for plugin {}",
+      style(version).bold(),
+      style(name).bold()
+    );
+  }
 
-  // let scripts = get_plugin_scripts(name)?;
-  // let resolved = scripts.resolve(version)?;
-  // info!("Resolved {} to {}", version, resolved.raw());
-  //
-  // if let Version::System = resolved {
-  //     bail!("can't install system version");
-  // }
-  //
-  // info!("Installing {} {}", &name, resolved.raw());
-  //
-  // if scripts.has_download() {
-  //     info!("Running download script...");
-  //     let _download_output = scripts.download(&resolved)?;
-  // }
-  //
-  // info!("Running install script...");
-  // let _install_output = scripts.install(&resolved, concurrency)?;
-  //
-  // info!("Installed {} {}", &name, resolved.raw());
-  //
-  // if !keep_download {
-  //     scripts.rm_version_download(&resolved)?;
-  // }
-  //
-  // Ok(())
+  let resolved = resolved.unwrap();
+  if version != resolved.raw() {
+    info!("Resolved {} to {}", version, resolved.raw());
+  }
+
+  if let Version::System = resolved {
+    bail!("Can't install system version");
+  }
+
+  info!("Installing {} {}", &name, resolved.raw());
+
+  if scripts.has_download() {
+    scripts.download(pool, &resolved)?;
+  }
+
+  scripts.install(pool, &resolved, concurrency)?;
+
+  info!(
+    "Installed {} {}",
+    style(name).bold(),
+    style(resolved.raw()).bold()
+  );
+
+  if !keep_download {
+    scripts.rm_version_download(&resolved)?;
+  }
+
+  Ok(())
 }
 
-pub fn uninstall(name: String, version: String) -> Result<()> {
-  todo!()
+pub fn uninstall(pool: &ThreadPool, name: String, version: String) -> Result<()> {
+  let scripts = get_plugin_scripts(&name)?;
+  let version = Version::parse(&version);
+  if !scripts.version_installed(&version) {
+    bail!("version {} is not installed", version.version_str());
+  }
 
-  // let scripts = get_plugin_scripts(&name)?;
-  // let version = Version::parse(&version);
-  // if !scripts.version_installed(&version) {
-  //     bail!("version `{}` is not installed", version.version_str());
-  // }
-  //
-  // info!("Uninstalling {} {}", &name, version.raw());
-  //
-  // if scripts.has_uninstall() {
-  //     info!("Running uninstall script...");
-  //     let uninstall_output = scripts.uninstall(&version)?;
-  //     trace!("Uninstall ouput:\n{uninstall_output}");
-  // } else {
-  //     info!("Running version directory...");
-  //     scripts.rm_version(&version)?;
-  // }
-  //
-  // // Just in case this wasn't cleaned earlier
-  // scripts.rm_version_download(&version)?;
-  //
-  // info!("Uninstalled {} {}", &name, version.raw());
-  //
-  // Ok(())
+  info!("Uninstalling {} {}", &name, version.raw());
+
+  if scripts.has_uninstall() {
+    scripts.uninstall(pool, &version)?;
+  } else {
+    scripts.rm_version(&version)?;
+  }
+
+  // Just in case this wasn't cleaned earlier
+  scripts.rm_version_download(&version)?;
+
+  info!("Uninstalled {} {}", &name, version.raw());
+
+  Ok(())
 }

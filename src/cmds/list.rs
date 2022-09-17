@@ -5,8 +5,6 @@ use threadpool::ThreadPool;
 
 use crate::dirs::{get_dir, get_plugin_scripts, INSTALLS_DIR};
 
-use super::util::auto_bar;
-
 pub fn all_installed() -> Result<()> {
   let install_dir = get_dir(INSTALLS_DIR)?;
 
@@ -17,7 +15,7 @@ pub fn all_installed() -> Result<()> {
     .collect::<Vec<_>>();
 
   if entries.is_empty() {
-    println!("no tools installed");
+    println!("No tools installed");
     return Ok(());
   }
 
@@ -49,7 +47,7 @@ pub fn installed(name: String, filter: Option<String>) -> Result<()> {
 fn get_installed_versions(name: &str, filter: Option<String>) -> Result<Vec<String>> {
   let install_dir = get_dir(INSTALLS_DIR)?.join(&name);
   if !install_dir.is_dir() {
-    bail!("no versions installed for `{name}`");
+    bail!("No versions installed for `{name}`");
   }
 
   let entries = fs::read_dir(&install_dir)?
@@ -94,7 +92,7 @@ pub fn all(name: String, filter: Option<String>) -> Result<()> {
   let pool = ThreadPool::new(1);
   let versions = get_available_versions(&pool, &name, filter)?;
   if versions.is_empty() {
-    bail!("no versions found");
+    bail!("No versions found");
   }
 
   for version in versions {
@@ -108,7 +106,7 @@ pub fn latest(name: String, filter: Option<String>) -> Result<()> {
   let pool = ThreadPool::new(1);
   let versions = get_available_versions(&pool, &name, filter)?;
   if versions.is_empty() {
-    bail!("no versions found");
+    bail!("No versions found");
   }
 
   println!("{}", versions.last().unwrap());

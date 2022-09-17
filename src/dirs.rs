@@ -43,7 +43,7 @@ pub fn get_plugin_scripts(name: &str) -> Result<PluginScripts> {
   )?;
 
   if !result.plugin_installed() {
-    bail!("plugin `{name}` is not installed");
+    bail!("Plugin {name} is not installed");
   }
 
   Ok(result)

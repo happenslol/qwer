@@ -13,22 +13,22 @@ use crate::{
 
 #[derive(Error, Debug)]
 pub enum GitError {
-  #[error("io error while running git command")]
+  #[error("IO error while running git command")]
   Io(#[from] std::io::Error),
 
-  #[error("git command returned an error:\n{0}")]
+  #[error("Git command returned an error:\n{0}")]
   Command(String),
 
-  #[error("failed to read command output")]
+  #[error("Failed to read command output")]
   Output(#[from] std::string::FromUtf8Error),
 
-  #[error("`{0}` is not a git directory")]
+  #[error("{0} is not a git directory")]
   NotAGitDirectory(PathBuf),
 
-  #[error("error while running git command: {0}")]
+  #[error("Error while running git command: {0}")]
   ProcessError(#[from] ProcessError),
 
-  #[error("failed to receive background task result: {0}")]
+  #[error("Failed to receive background task result: {0}")]
   BackgroundError(#[from] flume::RecvError),
 }
 
@@ -55,6 +55,7 @@ impl GitRepo {
     url: &str,
     name: &str,
     branch: Option<&str>,
+    message: Option<&str>,
   ) -> Result<Self, GitError> {
     trace!(
       "Cloning repo `{}@{:?}` into {:?}",
@@ -68,9 +69,13 @@ impl GitRepo {
       args.push(branch);
     }
 
+    let message = message
+      .map(|it| it.to_string())
+      .unwrap_or_else(|| format!("Cloning {name}"));
+
     run_background(
       pool,
-      format!("Cloning {name}"),
+      message,
       "git",
       Some(&args),
       Some(dir.as_ref()),
@@ -197,29 +202,43 @@ impl GitRepo {
     self.git_foreground(&["rev-parse", "--short", "HEAD"], |output| output)
   }
 
-  pub fn update_to_ref(&self, pool: &ThreadPool, rref: &str) -> Result<(), GitError> {
+  pub fn update_to_ref(
+    &self,
+    pool: &ThreadPool,
+    rref: &str,
+    message: Option<&str>,
+  ) -> Result<(), GitError> {
+    let message = message
+      .map(|it| it.to_string())
+      .unwrap_or_else(|| format!("Fetching ref {}", style(rref).bold()));
+
     self
-      .git_background(
-        pool,
-        format!("Fetching {rref}"),
-        &["fetch", "--prune", "origin"],
-        |_| (),
-      )?
+      .git_background(pool, message, &["fetch", "--prune", "origin"], |_| ())?
       .recv()??;
 
     self.force_checkout(rref)?;
     Ok(())
   }
 
-  pub fn update_to_remote_head(&self, pool: &ThreadPool) -> Result<(), GitError> {
+  pub fn update_to_remote_head(
+    &self,
+    pool: &ThreadPool,
+    message: Option<&str>,
+  ) -> Result<(), GitError> {
     let remote_default_branch = self.find_remote_default_branch(pool)?.recv()??;
+    let message = message.map(|it| it.to_string()).unwrap_or_else(|| {
+      format!(
+        "Fetching remote branch {}",
+        style(&remote_default_branch).bold()
+      )
+    });
 
     trace!("Fetching from remote default branch `{remote_default_branch}`");
     let fetch_arg = format!("{remote_default_branch}:{remote_default_branch}");
     self
       .git_background(
         pool,
-        format!("Fetching {remote_default_branch}"),
+        message,
         &["fetch", "--prune", "--update-head-ok", "origin", &fetch_arg],
         |_| (),
       )?

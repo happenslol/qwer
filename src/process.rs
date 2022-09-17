@@ -4,19 +4,19 @@ use std::{
   fs,
   io::{BufRead, BufReader},
   os::unix::prelude::PermissionsExt,
-  path::{Path, PathBuf},
+  path::{Path, PathBuf}, time::Duration,
 };
 
-use console::style;
+use console::{style, Style};
 use flume::Receiver;
-use indicatif::ProgressBar;
+use indicatif::{ProgressBar, ProgressStyle};
 use lazy_static::lazy_static;
 use log::{info, trace};
 use regex::Regex;
 use thiserror::Error;
 use threadpool::ThreadPool;
 
-use crate::cmds::util::auto_bar;
+use crate::PROGRESS;
 
 #[derive(Error, Debug)]
 pub enum ProcessError {
@@ -31,6 +31,24 @@ pub enum ProcessError {
 }
 
 pub type BackgroundProcess<T> = Receiver<Result<T, ProcessError>>;
+
+lazy_static! {
+  pub static ref PROGRESS_STYLE: ProgressStyle =
+    ProgressStyle::with_template("{spinner:.cyan} {wide_msg}")
+      .expect("failed to create progress style")
+      .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏");
+  pub static ref DONE_STYLE: ProgressStyle =
+    ProgressStyle::with_template("{prefix} {wide_msg}").expect("failed to create done style");
+}
+
+pub fn auto_bar() -> ProgressBar {
+  let bar = ProgressBar::new(1);
+  bar.set_style(PROGRESS_STYLE.clone());
+  bar.enable_steady_tick(Duration::from_millis(200));
+  PROGRESS.add(bar.clone());
+
+  bar
+}
 
 pub fn run_background<Cmd, T>(
   pool: &ThreadPool,
@@ -70,6 +88,8 @@ where
   let (mut stderr_read, stderr_write) = os_pipe::pipe()?;
 
   pool.execute(move || {
+    bar.set_message(message.clone());
+
     // This moves stderr_write into the temporary duct::Expression that drops at the end of
     // this statement. That's important; retaining it would deadlock the read loop below.
     let handle = match expr.stderr_file(stderr_write).start() {
@@ -95,7 +115,7 @@ where
         .filter(|line| !line.is_empty())
         .rev()
         .take(3)
-        .map(|line| format!("      {}", line))
+        .map(|line| format!("    {}", line))
         .collect::<Vec<_>>();
 
       last_lines.reverse();
@@ -105,7 +125,7 @@ where
 
       bar.set_message(format!(
         "{}\n{}",
-        message,
+        message.clone(),
         style(last_lines.join("\n")).dim()
       ));
     }
@@ -147,6 +167,10 @@ where
     }
 
     let parsed = parse_output(output_str);
+    bar.set_style(DONE_STYLE.clone());
+    bar.set_prefix(style("✔").green().to_string());
+    bar.finish_with_message(message.clone());
+
     let _ = tx.send(Ok(parsed));
   });
 
