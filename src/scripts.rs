@@ -141,7 +141,9 @@ impl PluginScripts {
 
     run_background(
       pool,
+      None,
       message,
+      false,
       script_path.as_ref(),
       None,
       None,
@@ -197,6 +199,7 @@ impl PluginScripts {
           &[],
           |output| output.trim().split(' ').map(|v| v.to_owned()).collect(),
         )?
+        .1
         .recv()??,
     )
   }
@@ -248,6 +251,7 @@ impl PluginScripts {
               .map(|version| Version::parse(version))
           },
         )?
+        .1
         .recv()??,
     )
   }
@@ -297,6 +301,7 @@ impl PluginScripts {
           ],
           |_| Some(()),
         )?
+        .1
         .recv()??,
     )
   }
@@ -352,6 +357,7 @@ impl PluginScripts {
           ],
           |output| Some(output),
         )?
+        .1
         .recv()??,
     )
   }
@@ -419,6 +425,7 @@ impl PluginScripts {
           ],
           |output| Some(output),
         )?
+        .1
         .recv()??,
     )
   }
@@ -641,6 +648,7 @@ impl PluginScripts {
             &[],
             |output| Some(Version::parse(output.trim())),
           )?
+          .1
           .recv()??,
       ),
       false => {
@@ -663,6 +671,7 @@ impl PluginScripts {
                   .map(|version| Version::parse(version))
               },
             )?
+            .1
             .recv()??,
         )
       }
@@ -690,6 +699,7 @@ impl PluginScripts {
           &[(ASDF_PLUGIN_SOURCE_URL, install_url)],
           |_| Some(()),
         )?
+        .1
         .recv()??,
     )
   }
@@ -718,6 +728,7 @@ impl PluginScripts {
           ],
           |_| Some(()),
         )?
+        .1
         .recv()??,
     )
   }
@@ -737,6 +748,7 @@ impl PluginScripts {
           &[(ASDF_PLUGIN_PATH, &*self.plugin_dir.to_string_lossy())],
           |_| Some(()),
         )?
+        .1
         .recv()??,
     )
   }

@@ -32,6 +32,7 @@ pub enum GitError {
   BackgroundError(#[from] flume::RecvError),
 }
 
+#[derive(Debug, Clone)]
 pub struct GitRepo {
   git_dir: PathBuf,
   work_tree: PathBuf,
@@ -75,13 +76,16 @@ impl GitRepo {
 
     run_background(
       pool,
+      None,
       message,
+      true,
       "git",
       Some(&args),
       Some(dir.as_ref()),
       None,
       |output| output,
     )?
+    .1
     .recv()??;
 
     let work_tree = dir.as_ref().join(name);
@@ -93,7 +97,9 @@ impl GitRepo {
   fn git_background<T>(
     &self,
     pool: &ThreadPool,
+    bar: Option<ProgressBar>,
     message: String,
+    auto_finish: bool,
     args: &[&str],
     parse_output: impl FnOnce(String) -> T + Send + 'static,
   ) -> Result<BackgroundProcess<T>, GitError>
@@ -116,7 +122,9 @@ impl GitRepo {
 
     Ok(run_background(
       pool,
+      bar,
       message,
+      auto_finish,
       "git",
       Some(args_with_dirs),
       Some(&self.git_dir),
@@ -156,10 +164,17 @@ impl GitRepo {
   fn find_remote_default_branch(
     &self,
     pool: &ThreadPool,
+    message: Option<&str>,
   ) -> Result<BackgroundProcess<String>, GitError> {
+    let message = message
+      .map(|it| it.to_string())
+      .unwrap_or_else(|| String::from("Resolving remote default branch"));
+
     Ok(self.git_background(
       pool,
-      format!("Resolving remote default branch"),
+      None,
+      message,
+      false,
       &["remote", "show", "origin"],
       |output| {
         output
@@ -213,7 +228,15 @@ impl GitRepo {
       .unwrap_or_else(|| format!("Fetching ref {}", style(rref).bold()));
 
     self
-      .git_background(pool, message, &["fetch", "--prune", "origin"], |_| ())?
+      .git_background(
+        pool,
+        None,
+        message,
+        true,
+        &["fetch", "--prune", "origin"],
+        |_| (),
+      )?
+      .1
       .recv()??;
 
     self.force_checkout(rref)?;
@@ -223,25 +246,33 @@ impl GitRepo {
   pub fn update_to_remote_head(
     &self,
     pool: &ThreadPool,
-    message: Option<&str>,
+    find_head_message: Option<&str>,
+    fetch_head_message: Option<&str>,
   ) -> Result<(), GitError> {
-    let remote_default_branch = self.find_remote_default_branch(pool)?.recv()??;
-    let message = message.map(|it| it.to_string()).unwrap_or_else(|| {
-      format!(
-        "Fetching remote branch {}",
-        style(&remote_default_branch).bold()
-      )
-    });
+    let (bar, task) = self.find_remote_default_branch(pool, find_head_message)?;
+    let remote_default_branch = task.recv()??;
+
+    let message = fetch_head_message
+      .map(|it| it.to_string())
+      .unwrap_or_else(|| {
+        format!(
+          "Fetching remote branch {}",
+          style(&remote_default_branch).bold()
+        )
+      });
 
     trace!("Fetching from remote default branch `{remote_default_branch}`");
     let fetch_arg = format!("{remote_default_branch}:{remote_default_branch}");
     self
       .git_background(
         pool,
+        Some(bar),
         message,
+        true,
         &["fetch", "--prune", "--update-head-ok", "origin", &fetch_arg],
         |_| (),
       )?
+      .1
       .recv()??;
 
     trace!("Resetting to origin/{remote_default_branch}");

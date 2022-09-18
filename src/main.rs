@@ -279,13 +279,13 @@ fn main() -> Result<()> {
       let plugin_to_use = if let Some(name) = name {
         name
       } else {
-        cmds::uuse::select_plugin(&pool)
+        cmds::uuse::select_plugin(&pool)?
       };
 
       let version_to_install = if let Some(version) = version {
         version
       } else {
-        cmds::uuse::select_version(&pool)
+        cmds::uuse::select_version(&pool)?
       };
 
       Ok(())

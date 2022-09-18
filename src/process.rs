@@ -4,7 +4,8 @@ use std::{
   fs,
   io::{BufRead, BufReader},
   os::unix::prelude::PermissionsExt,
-  path::{Path, PathBuf}, time::Duration,
+  path::{Path, PathBuf},
+  time::Duration,
 };
 
 use console::{style, Style};
@@ -30,7 +31,7 @@ pub enum ProcessError {
   Failed(String),
 }
 
-pub type BackgroundProcess<T> = Receiver<Result<T, ProcessError>>;
+pub type BackgroundProcess<T> = (ProgressBar, Receiver<Result<T, ProcessError>>);
 
 lazy_static! {
   pub static ref PROGRESS_STYLE: ProgressStyle =
@@ -44,15 +45,23 @@ lazy_static! {
 pub fn auto_bar() -> ProgressBar {
   let bar = ProgressBar::new(1);
   bar.set_style(PROGRESS_STYLE.clone());
-  bar.enable_steady_tick(Duration::from_millis(200));
+  bar.enable_steady_tick(Duration::from_millis(100));
   PROGRESS.add(bar.clone());
 
   bar
 }
 
+pub fn finish(bar: ProgressBar) {
+  bar.set_prefix(style("✔").green().to_string());
+  bar.set_style(DONE_STYLE.clone());
+  bar.finish();
+}
+
 pub fn run_background<Cmd, T>(
   pool: &ThreadPool,
+  bar: Option<ProgressBar>,
   message: String,
+  auto_finish: bool,
   command: Cmd,
   args: Option<&[&str]>,
   dir: Option<&Path>,
@@ -84,6 +93,7 @@ where
 
   let (tx, rx) = flume::bounded(1);
   let bar = auto_bar();
+  let result_bar = bar.clone();
 
   let (mut stderr_read, stderr_write) = os_pipe::pipe()?;
 
@@ -167,14 +177,15 @@ where
     }
 
     let parsed = parse_output(output_str);
-    bar.set_style(DONE_STYLE.clone());
-    bar.set_prefix(style("✔").green().to_string());
-    bar.finish_with_message(message.clone());
+
+    if auto_finish {
+      finish(bar);
+    }
 
     let _ = tx.send(Ok(parsed));
   });
 
-  Ok(rx)
+  Ok((result_bar, rx))
 }
 
 pub fn run_foreground<Cmd, T>(

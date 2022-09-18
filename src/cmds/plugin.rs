@@ -7,6 +7,7 @@ use std::{
 use anyhow::{bail, Result};
 use console::style;
 use log::{info, trace};
+use num_threads::num_threads;
 use tabled::{object::Segment, Alignment, Modify, Table, Tabled};
 use threadpool::ThreadPool;
 
@@ -143,6 +144,10 @@ pub fn update(pool: &ThreadPool, name: String, git_ref: Option<String>) -> Resul
     repo.update_to_remote_head(
       pool,
       Some(&format!(
+        "Finding latest version for plugin {}",
+        style(&name).bold()
+      )),
+      Some(&format!(
         "Updating plugin {} to latest version",
         style(&name).bold()
       )),
@@ -156,21 +161,43 @@ pub fn update(pool: &ThreadPool, name: String, git_ref: Option<String>) -> Resul
   Ok(())
 }
 
-pub fn update_all(pool: &ThreadPool) -> Result<()> {
+pub fn update_all(_: &ThreadPool) -> Result<()> {
   let plugin_dir = get_dir(PLUGINS_DIR)?;
+  let dirs = fs::read_dir(plugin_dir)?.collect::<Vec<_>>();
+  let mut repos = Vec::with_capacity(dirs.len());
 
-  for plugin in fs::read_dir(plugin_dir)? {
+  for plugin in dirs {
     let plugin = plugin?;
 
     let name = plugin.file_name();
-    let name = name.to_string_lossy();
+    let name = name.to_string_lossy().to_string();
 
     let repo = git::GitRepo::new(plugin.path())?;
-
-    // TODO: Do we always want to update to the remote head
-    // ref here, or skip ones that are pinned?
-    repo.update_to_remote_head(pool, None)?;
+    repos.push((name, repo));
   }
 
+  // TODO: This is janky as hell
+  let pool = ThreadPool::new(repos.len());
+  for (name, repo) in repos {
+    pool.execute(move || {
+      let pool = ThreadPool::new(1);
+
+      // TODO: Do we always want to update to the remote head
+      // ref here, or skip ones that are pinned?
+      repo.update_to_remote_head(
+        &pool,
+        Some(&format!(
+          "Finding remote head branch for plugin {}",
+          style(&name).bold()
+        )),
+        Some(&format!(
+          "Updating plugin {} to latest version",
+          style(&name).bold()
+        )),
+      );
+    });
+  }
+
+  pool.join();
   Ok(())
 }

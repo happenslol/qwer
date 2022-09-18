@@ -23,13 +23,13 @@ const REGISTRY_CONFIG: &str = "registries.toml";
 
 #[derive(Error, Debug)]
 pub enum RegistryError {
-  #[error("plugin `{0}` was not found in the plugin repo")]
+  #[error("Plugin `{0}` was not found in the plugin repo")]
   NotFound(String),
 
-  #[error("io error while looking for plugin")]
+  #[error("IO error while looking for plugin")]
   Io(#[from] std::io::Error),
 
-  #[error("plugin shortcut `{0}` should be in format `repository = <git-url>`")]
+  #[error("Plugin shortcut `{0}` should be in format `repository = <git-url>`")]
   InvalidFile(String),
 }
 
@@ -78,7 +78,7 @@ fn update_registry(pool: &ThreadPool, url: &str, name: &str, _force: bool) -> Re
     }
 
     let repo = git::GitRepo::new(&registry_dir)?;
-    repo.update_to_remote_head(pool, None)?;
+    repo.update_to_remote_head(pool, None, None)?;
 
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
     registries.insert(name.to_owned(), Registry { last_sync: now });
