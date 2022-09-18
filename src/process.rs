@@ -37,24 +37,29 @@ lazy_static! {
   pub static ref PROGRESS_STYLE: ProgressStyle =
     ProgressStyle::with_template("{spinner:.cyan} {wide_msg}")
       .expect("failed to create progress style")
-      .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏");
+      .tick_strings(&[
+        "⠋",
+        "⠙",
+        "⠹",
+        "⠸",
+        "⠼",
+        "⠴",
+        "⠦",
+        "⠧",
+        "⠇",
+        "⠏",
+        &style("✔").green().to_string()
+      ]);
   pub static ref DONE_STYLE: ProgressStyle =
     ProgressStyle::with_template("{prefix} {wide_msg}").expect("failed to create done style");
 }
 
 pub fn auto_bar() -> ProgressBar {
-  let bar = ProgressBar::new(1);
+  let bar = PROGRESS.add(ProgressBar::new(1));
+  let style = PROGRESS_STYLE.clone();
   bar.set_style(PROGRESS_STYLE.clone());
   bar.enable_steady_tick(Duration::from_millis(100));
-  PROGRESS.add(bar.clone());
-
   bar
-}
-
-pub fn finish(bar: ProgressBar) {
-  bar.set_prefix(style("✔").green().to_string());
-  bar.set_style(DONE_STYLE.clone());
-  bar.finish();
 }
 
 pub fn run_background<Cmd, T>(
@@ -179,7 +184,7 @@ where
     let parsed = parse_output(output_str);
 
     if auto_finish {
-      finish(bar);
+      bar.finish();
     }
 
     let _ = tx.send(Ok(parsed));
