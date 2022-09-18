@@ -161,7 +161,7 @@ pub fn update(pool: &ThreadPool, name: String, git_ref: Option<String>) -> Resul
   Ok(())
 }
 
-pub fn update_all(_: &ThreadPool) -> Result<()> {
+pub fn update_all(pool: &mut ThreadPool) -> Result<()> {
   let plugin_dir = get_dir(PLUGINS_DIR)?;
   let dirs = fs::read_dir(plugin_dir)?.collect::<Vec<_>>();
   let mut repos = Vec::with_capacity(dirs.len());
@@ -177,7 +177,7 @@ pub fn update_all(_: &ThreadPool) -> Result<()> {
   }
 
   // TODO: This is janky as hell
-  let pool = ThreadPool::new(repos.len());
+  pool.set_num_threads(repos.len());
   for (name, repo) in repos {
     pool.execute(move || {
       let pool = ThreadPool::new(1);

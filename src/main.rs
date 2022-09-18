@@ -247,7 +247,7 @@ fn main() -> Result<()> {
     trace!("Running as asdf ({self_executable:?})");
   }
 
-  let pool = ThreadPool::new(1);
+  let mut pool = ThreadPool::new(1);
 
   let result = match Cli::parse().command {
     Commands::Hook { shell } => {
@@ -306,7 +306,7 @@ fn main() -> Result<()> {
         name,
         git_ref,
       } => match (command, name) {
-        (Some(PluginUpdateCommand::All), ..) => cmds::plugin::update_all(&pool),
+        (Some(PluginUpdateCommand::All), ..) => cmds::plugin::update_all(&mut pool),
         (None, Some(name)) => cmds::plugin::update(&pool, name, git_ref),
         _ => unreachable!(),
       },
