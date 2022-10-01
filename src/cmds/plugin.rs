@@ -6,8 +6,8 @@ use tabled::{object::Segment, Alignment, Modify, Table, Tabled};
 
 use crate::{
   dirs::{get_dir, get_plugin_scripts, INSTALLS_DIR, PLUGINS_DIR},
-  git,
-  plugins,
+  git, plugins,
+  process::auto_bar,
 };
 
 fn display_option(opt: &Option<String>) -> String {
@@ -124,15 +124,18 @@ pub fn update(name: String, git_ref: Option<String>) -> Result<()> {
   let repo = git::GitRepo::new(&update_plugin_dir)?;
   let prev = repo.get_head_ref()?;
 
+  let bar = auto_bar();
   if let Some(git_ref) = git_ref {
-    println!("");
     repo.update_to_ref(
+      (
+        &bar,
+        &format!(
+          "Updating plugin {} to version {}",
+          style(&name).bold(),
+          style(&git_ref).bold(),
+        ),
+      ),
       &git_ref,
-      Some(&format!(
-        "Updating plugin {} to version {}",
-        style(&name).bold(),
-        style(&git_ref).bold(),
-      )),
     )?;
   } else {
     // TODO: Does update without a ref always mean we

@@ -54,6 +54,8 @@ lazy_static! {
       ]);
 }
 
+pub type Progress<'a> = (&'a ProgressBar, &'a str);
+
 pub fn auto_bar() -> ProgressBar {
   let bar = PROGRESS.add(ProgressBar::new(1));
   bar.set_style(PROGRESS_STYLE.clone());
@@ -61,19 +63,17 @@ pub fn auto_bar() -> ProgressBar {
   bar
 }
 
-pub fn run_with_progress<Cmd, T>(
-  bar: Option<ProgressBar>,
-  message: String,
-  auto_finish: bool,
+pub fn run<Cmd, T>(
+  show_progress: Option<Progress>,
   command: Cmd,
   args: Option<&[&str]>,
   dir: Option<&Path>,
   env: Option<&[(&str, &str)]>,
-  parse_output: impl FnOnce(String) -> T + Send + 'static,
-) -> Result<(T, ProgressBar), ProcessError>
+  parse_output: impl FnOnce(String) -> T + 'static,
+) -> Result<T, ProcessError>
 where
   Cmd: AsRef<OsStr>,
-  T: 'static + Send,
+  T: 'static,
 {
   let mut cmd = Command::new(command);
 
@@ -92,11 +92,17 @@ where
     }
   }
 
-  let bar = bar.unwrap_or_else(|| auto_bar());
-  bar.set_message(message.clone());
-
-  let (status, output_str, all_output) = read_process(cmd, &bar, &message)?;
-  bar.set_message(message.clone());
+  let (status, output_str, all_output) = if let Some((bar, message)) = show_progress {
+    bar.set_message(message.to_string());
+    let (status, output_str, all_output) = read_process(cmd, &bar, &message)?;
+    bar.set_message(message.to_string());
+    (status, output_str, all_output)
+  } else {
+    let output = cmd.output()?;
+    let output_str = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr_str = String::from_utf8_lossy(&output.stderr).to_string();
+    (output.status, output_str, stderr_str)
+  };
 
   trace!("Got process output:\n{output_str}");
 
@@ -104,13 +110,7 @@ where
     return Err(ProcessError::Failed(all_output));
   }
 
-  let parsed = parse_output(output_str);
-
-  if auto_finish {
-    // bar.finish_with_message(message.clone());
-  }
-
-  Ok((parsed, bar))
+  Ok(parse_output(output_str))
 }
 
 fn read_process(
@@ -159,44 +159,6 @@ fn read_process(
   }
 
   unreachable!()
-}
-
-pub fn run<Cmd, T>(
-  command: Cmd,
-  args: Option<&[&str]>,
-  dir: Option<&Path>,
-  env: Option<&[(&str, &str)]>,
-  parse_output: impl FnOnce(String) -> T,
-) -> Result<T, ProcessError>
-where
-  Cmd: AsRef<OsStr>,
-{
-  let mut cmd = Command::new(command);
-
-  if let Some(args) = args {
-    cmd.args(args);
-  }
-
-  if let Some(path) = dir {
-    cmd.current_dir(path);
-  }
-
-  if let Some(env) = env {
-    trace!("Setting env for process:\n{env:#?}");
-    for (key, val) in env {
-      cmd.env(key, val);
-    }
-  }
-
-  let output = cmd.output()?;
-  let output_str = String::from_utf8(output.stdout)?;
-  trace!("Got process output:\n{output_str}");
-
-  if !output.status.success() {
-    return Err(ProcessError::Failed(output_str));
-  }
-
-  Ok(parse_output(output_str))
 }
 
 #[derive(Clone, Debug)]

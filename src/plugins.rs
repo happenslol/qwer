@@ -14,6 +14,7 @@ use thiserror::Error;
 use crate::{
   dirs::{get_data_dir, get_dir, get_plugin_scripts, PLUGINS_DIR, REGISTRIES_DIR},
   git,
+  process::auto_bar,
 };
 
 const DEFAULT_PLUGIN_REGISTRY_URL: &str = "https://github.com/asdf-vm/asdf-plugins.git";
@@ -61,7 +62,8 @@ fn update_registry(url: &str, name: &str, force: bool) -> Result<()> {
 
   if !registry_dir.is_dir() {
     let registries_dir = get_dir(REGISTRIES_DIR)?;
-    git::GitRepo::clone(&registries_dir, url, name, None, Some(&message))?;
+    let bar = auto_bar();
+    git::GitRepo::clone((&bar, &message), &registries_dir, url, name, None)?;
   } else {
     let mut registries = load_registries()?;
     let last_sync = registries.get(name).map(|reg| reg.last_sync).unwrap_or(0);
@@ -103,12 +105,16 @@ pub fn add(name: String, git_url: Option<String>) -> Result<()> {
     }
   };
 
+  let bar = auto_bar();
   git::GitRepo::clone(
+    (
+      &bar,
+      &format!("Installing plugin {}", style(&name).blue().bold()),
+    ),
     &plugin_dir,
     &git_url,
     &name,
     None,
-    Some(&format!("Installing plugin {}", style(&name).blue().bold())),
   )?;
 
   let scripts = get_plugin_scripts(&name)?;
