@@ -1,19 +1,13 @@
-use std::{
-  collections::HashMap,
-  fs,
-  time::{Duration, SystemTime, UNIX_EPOCH},
-};
+use std::fs;
 
 use anyhow::{bail, Result};
 use console::style;
-use log::{info, trace};
-use num_threads::num_threads;
 use tabled::{object::Segment, Alignment, Modify, Table, Tabled};
 
 use crate::{
-  dirs::{get_data_dir, get_dir, get_plugin_scripts, INSTALLS_DIR, PLUGINS_DIR, REGISTRIES_DIR},
+  dirs::{get_dir, get_plugin_scripts, INSTALLS_DIR, PLUGINS_DIR},
   git,
-  plugins::{self, parse_short_repo_url, Registry},
+  plugins,
 };
 
 fn display_option(opt: &Option<String>) -> String {
@@ -38,8 +32,8 @@ struct ListItem {
   rref: Option<String>,
 }
 
-pub fn list(urls: bool, refs: bool) -> Result<()> {
-  let plugins = plugins::list()?;
+pub fn list(force_refresh: bool, urls: bool, refs: bool) -> Result<()> {
+  let plugins = plugins::list(force_refresh)?;
   if plugins.is_empty() {
     println!("No plugins installed");
     return Ok(());
@@ -84,8 +78,8 @@ struct ListAllItem {
   url: String,
 }
 
-pub fn list_all() -> Result<()> {
-  let plugins = plugins::list_all()?;
+pub fn list_all(force_refresh: bool) -> Result<()> {
+  let plugins = plugins::list_all(force_refresh)?;
 
   let plugin_items = plugins.into_iter().map(|entry| ListAllItem {
     name: entry.name,

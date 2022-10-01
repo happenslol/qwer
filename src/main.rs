@@ -1,4 +1,3 @@
-#![allow(unused)]
 use std::{io::Write, path::Path};
 
 use anyhow::{bail, Context, Result};
@@ -143,6 +142,9 @@ enum PluginCommand {
     #[clap(subcommand)]
     command: Option<PluginListCommand>,
 
+    #[clap(long, short)]
+    force_refresh: bool,
+
     #[clap(short, long)]
     urls: bool,
 
@@ -273,13 +275,13 @@ fn main() -> Result<()> {
       Ok(())
     }
     Commands::Use { name, version } => {
-      let plugin_to_use = if let Some(name) = name {
+      let _plugin_to_use = if let Some(name) = name {
         name
       } else {
         cmds::uuse::select_plugin()?
       };
 
-      let version_to_install = if let Some(version) = version {
+      let _version_to_install = if let Some(version) = version {
         version
       } else {
         cmds::uuse::select_version()?
@@ -291,11 +293,12 @@ fn main() -> Result<()> {
       PluginCommand::Add { name, git_url } => cmds::plugin::add(name, git_url),
       PluginCommand::List {
         command,
+        force_refresh,
         urls,
         refs,
       } => match command {
-        Some(PluginListCommand::All) => cmds::plugin::list_all(),
-        None => cmds::plugin::list(urls, refs),
+        Some(PluginListCommand::All) => cmds::plugin::list_all(force_refresh),
+        None => cmds::plugin::list(force_refresh, urls, refs),
       },
       PluginCommand::Remove { name } => cmds::plugin::remove(name),
       PluginCommand::Update {

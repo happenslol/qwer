@@ -1,22 +1,20 @@
 use std::{
-  collections::{HashMap, HashSet, VecDeque},
-  ffi::{OsStr, OsString},
-  fs::{self, File},
-  io::{self, BufRead, BufReader, Read},
-  os::unix::prelude::{AsRawFd, FromRawFd, PermissionsExt},
-  path::{Path, PathBuf},
+  collections::VecDeque,
+  ffi::OsStr,
+  fs::File,
+  io::{self, Read},
+  os::unix::prelude::{AsRawFd, FromRawFd},
+  path::Path,
   process::{Child, Command, ExitStatus},
   time::Duration,
 };
 
-use console::{style, Style};
+use console::style;
 use indicatif::{ProgressBar, ProgressStyle};
 use lazy_static::lazy_static;
-use log::{info, trace};
+use log::trace;
 use mio::{unix::pipe::Receiver, Events, Interest, Token};
-use regex::Regex;
 use thiserror::Error;
-use threadpool::ThreadPool;
 
 use crate::PROGRESS;
 
@@ -58,7 +56,6 @@ lazy_static! {
 
 pub fn auto_bar() -> ProgressBar {
   let bar = PROGRESS.add(ProgressBar::new(1));
-  let style = PROGRESS_STYLE.clone();
   bar.set_style(PROGRESS_STYLE.clone());
   bar.enable_steady_tick(Duration::from_millis(100));
   bar
@@ -96,7 +93,6 @@ where
   }
 
   let bar = bar.unwrap_or_else(|| auto_bar());
-  let result_bar = bar.clone();
   bar.set_message(message.clone());
 
   let (status, output_str, all_output) = read_process(cmd, &bar, &message)?;
@@ -111,7 +107,7 @@ where
   let parsed = parse_output(output_str);
 
   if auto_finish {
-    bar.finish_with_message(message.clone());
+    // bar.finish_with_message(message.clone());
   }
 
   Ok((parsed, bar))

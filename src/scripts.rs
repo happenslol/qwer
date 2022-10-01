@@ -1,13 +1,11 @@
 use std::{
   collections::{HashMap, HashSet},
   fs,
-  io::{BufRead, BufReader},
   os::unix::prelude::PermissionsExt,
   path::{Path, PathBuf},
   process::Command,
 };
 
-use console::style;
 use indicatif::ProgressBar;
 use lazy_static::lazy_static;
 use log::trace;
@@ -40,9 +38,6 @@ const ASDF_PLUGIN_POST_REF: &str = "ASDF_PLUGIN_POST_REF";
 
 #[derive(Error, Debug)]
 pub enum PluginScriptError {
-  #[error("script returned a non-0 exit code:\n{0}")]
-  ScriptFailed(String),
-
   #[error("script `{0}` was not found")]
   ScriptNotFound(String),
 
@@ -60,9 +55,6 @@ pub enum PluginScriptError {
 
   #[error("no versions were found")]
   NoVersionsFound,
-
-  #[error("no versions were found for query `{0}`")]
-  NoMatchingVersionsFound(String),
 
   #[error("error while running script: {0}")]
   ProcessError(#[from] ProcessError),
@@ -543,7 +535,10 @@ impl PluginScripts {
     }
   }
 
-  pub fn exec_env_diff(
+  // NOTE: This is potentially a better version of getting
+  // an env diff, but it's a lot slower than simply replacing
+  // export with echo.
+  pub fn _exec_env_diff(
     &self,
     version: &Version,
   ) -> Result<Option<Vec<(String, String)>>, PluginScriptError> {

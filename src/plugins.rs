@@ -55,7 +55,7 @@ fn load_registries() -> Result<HashMap<String, Registry>> {
   Ok(toml::from_str(&contents)?)
 }
 
-fn update_registry(url: &str, name: &str, _force: bool) -> Result<()> {
+fn update_registry(url: &str, name: &str, force: bool) -> Result<()> {
   let registry_dir = get_dir(REGISTRIES_DIR)?.join(name);
   let message = format!("Cloning plugin registry {}", style(name).bold());
 
@@ -72,7 +72,8 @@ fn update_registry(url: &str, name: &str, _force: bool) -> Result<()> {
       name,
       elapsed.as_secs()
     );
-    if elapsed < Duration::from_secs(60 * 60) {
+
+    if elapsed < Duration::from_secs(60 * 60) && !force {
       return Ok(());
     }
 
@@ -130,8 +131,12 @@ pub struct PluginListEntry {
   pub installed: bool,
 }
 
-pub fn list() -> Result<Vec<PluginListEntry>> {
-  update_registry(DEFAULT_PLUGIN_REGISTRY_URL, DEFAULT_PLUGIN_REGISTRY, false)?;
+pub fn list(force_refresh: bool) -> Result<Vec<PluginListEntry>> {
+  update_registry(
+    DEFAULT_PLUGIN_REGISTRY_URL,
+    DEFAULT_PLUGIN_REGISTRY,
+    force_refresh,
+  )?;
 
   let plugin_dir = get_dir(PLUGINS_DIR)?;
   Ok(
@@ -159,8 +164,12 @@ pub fn list() -> Result<Vec<PluginListEntry>> {
   )
 }
 
-pub fn list_all() -> Result<Vec<PluginListEntry>> {
-  update_registry(DEFAULT_PLUGIN_REGISTRY_URL, DEFAULT_PLUGIN_REGISTRY, false)?;
+pub fn list_all(force_refresh: bool) -> Result<Vec<PluginListEntry>> {
+  update_registry(
+    DEFAULT_PLUGIN_REGISTRY_URL,
+    DEFAULT_PLUGIN_REGISTRY,
+    force_refresh,
+  )?;
 
   let registry_dir = get_dir(REGISTRIES_DIR)?.join(DEFAULT_PLUGIN_REGISTRY);
   let plugins_dir = get_dir(PLUGINS_DIR)?;

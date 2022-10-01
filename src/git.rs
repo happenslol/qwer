@@ -1,22 +1,16 @@
 use std::path::{Path, PathBuf};
 
 use console::style;
-use indicatif::{MultiProgress, ProgressBar};
+use indicatif::ProgressBar;
 use log::trace;
 use thiserror::Error;
 
-use crate::{
-  process::{run, run_with_progress, ProcessError},
-  PROGRESS,
-};
+use crate::process::{run, run_with_progress, ProcessError};
 
 #[derive(Error, Debug)]
 pub enum GitError {
   #[error("IO error while running git command")]
   Io(#[from] std::io::Error),
-
-  #[error("Git command returned an error:\n{0}")]
-  Command(String),
 
   #[error("Failed to read command output")]
   Output(#[from] std::string::FromUtf8Error),
