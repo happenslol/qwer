@@ -130,8 +130,8 @@ fn read_process(
         return Ok((status, stdout, all_output));
       }
       Ok(Out::Stdout(line)) => {
-        stdout_lines.push(line.clone());
-        line
+        stdout_lines.push(line);
+        continue;
       }
       Ok(Out::Stderr(line)) => line,
       Err(err) => return Err(err),
