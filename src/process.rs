@@ -111,7 +111,7 @@ where
   let parsed = parse_output(output_str);
 
   if auto_finish {
-    bar.finish();
+    bar.finish_with_message(message.clone());
   }
 
   Ok((parsed, bar))
@@ -228,6 +228,7 @@ struct ProcessReader {
 
   poll: mio::Poll,
   events: mio::Events,
+  status: Option<ExitStatus>,
   done: bool,
 }
 
@@ -266,6 +267,7 @@ impl ProcessReader {
 
       poll,
       events,
+      status: None,
       done: false,
     })
   }
@@ -288,6 +290,16 @@ fn read_pipe(
     }?;
 
     if n == 0 {
+      if !str_buf.is_empty() {
+        let line = String::from_utf8_lossy(&str_buf[..]).to_string();
+        match which {
+          Stream::Stdout => out_buf.push_back(Out::Stdout(line)),
+          Stream::Stderr => out_buf.push_back(Out::Stderr(line)),
+        };
+
+        str_buf.clear();
+      }
+
       return Ok(());
     }
 
@@ -316,13 +328,18 @@ impl Iterator for ProcessReader {
   type Item = Result<Out, io::Error>;
 
   fn next(&mut self) -> Option<Self::Item> {
-    if self.done {
-      return None;
-    }
-
     loop {
       if let Some(next) = self.output_buf.pop_front() {
         return Some(Ok(next));
+      }
+
+      if self.done {
+        return None;
+      }
+
+      if let Some(status) = self.status {
+        self.done = true;
+        return Some(Ok(Out::Done(status)));
       }
 
       match self.poll.poll(&mut self.events, None) {
@@ -360,8 +377,8 @@ impl Iterator for ProcessReader {
 
       match self.child.try_wait() {
         Ok(Some(status)) => {
-          self.done = true;
-          return Some(Ok(Out::Done(status)));
+          self.status = Some(status);
+          continue;
         }
         Ok(None) => continue,
         Err(err) => return Some(Err(err)),
