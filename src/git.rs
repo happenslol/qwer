@@ -4,10 +4,9 @@ use console::style;
 use indicatif::{MultiProgress, ProgressBar};
 use log::trace;
 use thiserror::Error;
-use threadpool::ThreadPool;
 
 use crate::{
-  process::{run_background, run_foreground, BackgroundProcess, ProcessError},
+  process::{run, run_with_progress, ProcessError},
   PROGRESS,
 };
 
@@ -27,9 +26,6 @@ pub enum GitError {
 
   #[error("Error while running git command: {0}")]
   ProcessError(#[from] ProcessError),
-
-  #[error("Failed to receive background task result: {0}")]
-  BackgroundError(#[from] flume::RecvError),
 }
 
 #[derive(Debug, Clone)]
@@ -51,7 +47,6 @@ impl GitRepo {
   }
 
   pub fn clone<P: AsRef<Path>>(
-    pool: &ThreadPool,
     dir: P,
     url: &str,
     name: &str,
@@ -74,8 +69,7 @@ impl GitRepo {
       .map(|it| it.to_string())
       .unwrap_or_else(|| format!("Cloning {name}"));
 
-    run_background(
-      pool,
+    run_with_progress(
       None,
       message,
       true,
@@ -84,9 +78,7 @@ impl GitRepo {
       Some(dir.as_ref()),
       None,
       |output| output,
-    )?
-    .1
-    .recv()??;
+    )?;
 
     let work_tree = dir.as_ref().join(name);
     let git_dir = work_tree.join(".git");
@@ -94,15 +86,14 @@ impl GitRepo {
     Ok(Self { git_dir, work_tree })
   }
 
-  fn git_background<T>(
+  fn run_git_with_progress<T>(
     &self,
-    pool: &ThreadPool,
     bar: Option<ProgressBar>,
     message: String,
     auto_finish: bool,
     args: &[&str],
     parse_output: impl FnOnce(String) -> T + Send + 'static,
-  ) -> Result<BackgroundProcess<T>, GitError>
+  ) -> Result<(T, ProgressBar), GitError>
   where
     T: 'static + Send,
   {
@@ -120,8 +111,7 @@ impl GitRepo {
       trace!("Running git command `{args_str}`");
     }
 
-    Ok(run_background(
-      pool,
+    Ok(run_with_progress(
       bar,
       message,
       auto_finish,
@@ -133,7 +123,7 @@ impl GitRepo {
     )?)
   }
 
-  fn git_foreground<T>(
+  fn run_git<T>(
     &self,
     args: &[&str],
     parse_output: impl FnOnce(String) -> T,
@@ -152,7 +142,7 @@ impl GitRepo {
       trace!("Running git command `{args_str}`");
     }
 
-    Ok(run_foreground(
+    Ok(run(
       "git",
       Some(args_with_dirs),
       Some(&self.git_dir),
@@ -163,15 +153,13 @@ impl GitRepo {
 
   fn find_remote_default_branch(
     &self,
-    pool: &ThreadPool,
     message: Option<&str>,
-  ) -> Result<BackgroundProcess<String>, GitError> {
+  ) -> Result<(String, ProgressBar), GitError> {
     let message = message
       .map(|it| it.to_string())
       .unwrap_or_else(|| String::from("Resolving remote default branch"));
 
-    Ok(self.git_background(
-      pool,
+    Ok(self.run_git_with_progress(
       None,
       message,
       false,
@@ -191,7 +179,7 @@ impl GitRepo {
   }
 
   fn force_checkout(&self, rref: &str) -> Result<(), GitError> {
-    self.git_foreground(
+    self.run_git(
       &[
         "-c",
         "advice.detachedHead=false",
@@ -206,51 +194,33 @@ impl GitRepo {
   }
 
   pub fn get_remote_url(&self) -> Result<String, GitError> {
-    self.git_foreground(&["remote", "get-url", "origin"], |output| output)
+    self.run_git(&["remote", "get-url", "origin"], |output| output)
   }
 
   pub fn get_head_branch(&self) -> Result<String, GitError> {
-    self.git_foreground(&["rev-parse", "--abbrev-ref", "HEAD"], |output| output)
+    self.run_git(&["rev-parse", "--abbrev-ref", "HEAD"], |output| output)
   }
 
   pub fn get_head_ref(&self) -> Result<String, GitError> {
-    self.git_foreground(&["rev-parse", "--short", "HEAD"], |output| output)
+    self.run_git(&["rev-parse", "--short", "HEAD"], |output| output)
   }
 
-  pub fn update_to_ref(
-    &self,
-    pool: &ThreadPool,
-    rref: &str,
-    message: Option<&str>,
-  ) -> Result<(), GitError> {
+  pub fn update_to_ref(&self, rref: &str, message: Option<&str>) -> Result<(), GitError> {
     let message = message
       .map(|it| it.to_string())
       .unwrap_or_else(|| format!("Fetching ref {}", style(rref).bold()));
 
-    self
-      .git_background(
-        pool,
-        None,
-        message,
-        true,
-        &["fetch", "--prune", "origin"],
-        |_| (),
-      )?
-      .1
-      .recv()??;
-
+    self.run_git_with_progress(None, message, true, &["fetch", "--prune", "origin"], |_| ())?;
     self.force_checkout(rref)?;
     Ok(())
   }
 
   pub fn update_to_remote_head(
     &self,
-    pool: &ThreadPool,
     find_head_message: Option<&str>,
     fetch_head_message: Option<&str>,
   ) -> Result<(), GitError> {
-    let (bar, task) = self.find_remote_default_branch(pool, find_head_message)?;
-    let remote_default_branch = task.recv()??;
+    let (remote_default_branch, bar) = self.find_remote_default_branch(find_head_message)?;
 
     let message = fetch_head_message
       .map(|it| it.to_string())
@@ -263,21 +233,17 @@ impl GitRepo {
 
     trace!("Fetching from remote default branch `{remote_default_branch}`");
     let fetch_arg = format!("{remote_default_branch}:{remote_default_branch}");
-    self
-      .git_background(
-        pool,
-        Some(bar),
-        message,
-        true,
-        &["fetch", "--prune", "--update-head-ok", "origin", &fetch_arg],
-        |_| (),
-      )?
-      .1
-      .recv()??;
+    self.run_git_with_progress(
+      Some(bar),
+      message,
+      true,
+      &["fetch", "--prune", "--update-head-ok", "origin", &fetch_arg],
+      |_| (),
+    )?;
 
     trace!("Resetting to origin/{remote_default_branch}");
     let remote_ref = format!("origin/{remote_default_branch}");
-    self.git_foreground(&["reset", "--hard", &remote_ref], |_| ())?;
+    self.run_git(&["reset", "--hard", &remote_ref], |_| ())?;
 
     Ok(())
   }

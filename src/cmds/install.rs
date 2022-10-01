@@ -3,18 +3,13 @@ use std::collections::HashMap;
 use anyhow::{bail, Result};
 use console::style;
 use log::{info, trace};
-use threadpool::ThreadPool;
 
 use crate::{
   dirs::{get_plugin_scripts, TOOL_VERSIONS},
   versions::{Version, Versions},
 };
 
-pub fn install_all(
-  pool: &ThreadPool,
-  concurrency: Option<usize>,
-  keep_download: bool,
-) -> Result<()> {
+pub fn install_all(concurrency: Option<usize>, keep_download: bool) -> Result<()> {
   let to_install = gather_versions()?;
   trace!("Installing versions:\n{to_install:#?}");
 
@@ -28,18 +23,13 @@ pub fn install_all(
       continue;
     }
 
-    install(pool, plugin, &version.raw(), concurrency, keep_download)?;
+    install(plugin, &version.raw(), concurrency, keep_download)?;
   }
 
   Ok(())
 }
 
-pub fn install_one(
-  pool: &ThreadPool,
-  name: String,
-  concurrency: Option<usize>,
-  keep_download: bool,
-) -> Result<()> {
+pub fn install_one(name: String, concurrency: Option<usize>, keep_download: bool) -> Result<()> {
   let versions = gather_versions()?;
   if !versions.contains_key(&name) {
     bail!("Tool `{name}` is not defined in any version files");
@@ -48,7 +38,7 @@ pub fn install_one(
   let to_install = &versions[&name];
   trace!("Installing version: {name} {to_install:?}");
 
-  install(pool, &name, &to_install.raw(), concurrency, keep_download)
+  install(&name, &to_install.raw(), concurrency, keep_download)
 }
 
 fn gather_versions() -> Result<HashMap<String, Version>> {
@@ -74,24 +64,22 @@ fn gather_versions() -> Result<HashMap<String, Version>> {
 }
 
 pub fn install_one_version(
-  pool: &ThreadPool,
   name: String,
   version: String,
   concurrency: Option<usize>,
   keep_download: bool,
 ) -> Result<()> {
-  install(pool, &name, &version, concurrency, keep_download)
+  install(&name, &version, concurrency, keep_download)
 }
 
 fn install(
-  pool: &ThreadPool,
   name: &str,
   version: &str,
   concurrency: Option<usize>,
   keep_download: bool,
 ) -> Result<()> {
   let scripts = get_plugin_scripts(name)?;
-  let resolved = scripts.resolve(pool, version)?;
+  let resolved = scripts.resolve(version)?;
   if resolved.is_none() {
     bail!(
       "Failed to resolve version {} for plugin {}",
@@ -112,10 +100,10 @@ fn install(
   info!("Installing {} {}", &name, resolved.raw());
 
   if scripts.has_download() {
-    scripts.download(pool, &resolved)?;
+    scripts.download(&resolved)?;
   }
 
-  scripts.install(pool, &resolved, concurrency)?;
+  scripts.install(&resolved, concurrency)?;
 
   info!(
     "Installed {} {}",
@@ -130,7 +118,7 @@ fn install(
   Ok(())
 }
 
-pub fn uninstall(pool: &ThreadPool, name: String, version: String) -> Result<()> {
+pub fn uninstall(name: String, version: String) -> Result<()> {
   let scripts = get_plugin_scripts(&name)?;
   let version = Version::parse(&version);
   if !scripts.version_installed(&version) {
@@ -140,7 +128,7 @@ pub fn uninstall(pool: &ThreadPool, name: String, version: String) -> Result<()>
   info!("Uninstalling {} {}", &name, version.raw());
 
   if scripts.has_uninstall() {
-    scripts.uninstall(pool, &version)?;
+    scripts.uninstall(&version)?;
   } else {
     scripts.rm_version(&version)?;
   }

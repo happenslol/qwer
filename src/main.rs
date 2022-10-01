@@ -6,7 +6,6 @@ use clap::{Parser, Subcommand};
 use console::style;
 use indicatif::MultiProgress;
 use log::{error, trace};
-use threadpool::ThreadPool;
 
 use crate::{
   dirs::{get_dir, BIN_DIR},
@@ -247,8 +246,6 @@ fn main() -> Result<()> {
     trace!("Running as asdf ({self_executable:?})");
   }
 
-  let mut pool = ThreadPool::new(1);
-
   let result = match Cli::parse().command {
     Commands::Hook { shell } => {
       trace!("Running {} hook", shell.name());
@@ -279,35 +276,35 @@ fn main() -> Result<()> {
       let plugin_to_use = if let Some(name) = name {
         name
       } else {
-        cmds::uuse::select_plugin(&pool)?
+        cmds::uuse::select_plugin()?
       };
 
       let version_to_install = if let Some(version) = version {
         version
       } else {
-        cmds::uuse::select_version(&pool)?
+        cmds::uuse::select_version()?
       };
 
       Ok(())
     }
     Commands::Plugin { command } => match command {
-      PluginCommand::Add { name, git_url } => cmds::plugin::add(&pool, name, git_url),
+      PluginCommand::Add { name, git_url } => cmds::plugin::add(name, git_url),
       PluginCommand::List {
         command,
         urls,
         refs,
       } => match command {
-        Some(PluginListCommand::All) => cmds::plugin::list_all(&pool),
-        None => cmds::plugin::list(&pool, urls, refs),
+        Some(PluginListCommand::All) => cmds::plugin::list_all(),
+        None => cmds::plugin::list(urls, refs),
       },
-      PluginCommand::Remove { name } => cmds::plugin::remove(&pool, name),
+      PluginCommand::Remove { name } => cmds::plugin::remove(name),
       PluginCommand::Update {
         command,
         name,
         git_ref,
       } => match (command, name) {
-        (Some(PluginUpdateCommand::All), ..) => cmds::plugin::update_all(&mut pool),
-        (None, Some(name)) => cmds::plugin::update(&pool, name, git_ref),
+        (Some(PluginUpdateCommand::All), ..) => cmds::plugin::update_all(),
+        (None, Some(name)) => cmds::plugin::update(name, git_ref),
         _ => unreachable!(),
       },
     },
@@ -317,30 +314,30 @@ fn main() -> Result<()> {
       concurrency,
       keep_download,
     } => match (name, version) {
-      (None, None) => cmds::install::install_all(&pool, concurrency, keep_download),
-      (Some(name), None) => cmds::install::install_one(&pool, name, concurrency, keep_download),
+      (None, None) => cmds::install::install_all(concurrency, keep_download),
+      (Some(name), None) => cmds::install::install_one(name, concurrency, keep_download),
       (Some(name), Some(version)) => {
-        cmds::install::install_one_version(&pool, name, version, concurrency, keep_download)
+        cmds::install::install_one_version(name, version, concurrency, keep_download)
       }
       _ => unreachable!(),
     },
-    Commands::Uninstall { name, version } => cmds::install::uninstall(&pool, name, version),
+    Commands::Uninstall { name, version } => cmds::install::uninstall(name, version),
     Commands::Current { name } => cmds::env::current(name),
-    Commands::Where { name, version } => cmds::env::wwhere(&pool, name, version),
-    Commands::Latest { name, filter } => cmds::list::latest(&pool, name, filter),
+    Commands::Where { name, version } => cmds::env::wwhere(name, version),
+    Commands::Latest { name, filter } => cmds::list::latest(name, filter),
     Commands::List {
       command,
       name,
       filter,
     } => match (command, name) {
-      (Some(ListCommand::All { name, filter }), None) => cmds::list::all(&pool, name, filter),
+      (Some(ListCommand::All { name, filter }), None) => cmds::list::all(name, filter),
       (None, None) => cmds::list::all_installed(),
       (None, Some(name)) => cmds::list::installed(name, filter),
       _ => unreachable!(),
     },
-    Commands::Global { name, version } => cmds::version::global(&pool, name, version),
-    Commands::Local { name, version } => cmds::version::local(&pool, name, version),
-    Commands::Shell { name, version } => cmds::version::shell(&pool, name, version),
+    Commands::Global { name, version } => cmds::version::global(name, version),
+    Commands::Local { name, version } => cmds::version::local(name, version),
+    Commands::Shell { name, version } => cmds::version::shell(name, version),
     Commands::Help { plugin, version } => cmds::help::help(plugin, version),
     Commands::Command(args) => cmds::ext::ext(args),
 

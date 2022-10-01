@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use anyhow::{anyhow, bail, Result};
-use threadpool::ThreadPool;
 
 use crate::{
   dirs::{get_plugin_scripts, TOOL_VERSIONS},
@@ -9,10 +8,10 @@ use crate::{
   versions::Versions,
 };
 
-fn use_version_for_dir(pool: &ThreadPool, name: String, version: String, path: PathBuf) -> Result<()> {
+fn use_version_for_dir(name: String, version: String, path: PathBuf) -> Result<()> {
   let scripts = get_plugin_scripts(&name)?;
   // TODO: errors
-  let version = scripts.resolve(pool, &version)?.unwrap();
+  let version = scripts.resolve(&version)?.unwrap();
   if !scripts.version_installed(&version) {
     bail!(
       "Version `{}` is not installed for plugin `{}`",
@@ -34,19 +33,19 @@ fn use_version_for_dir(pool: &ThreadPool, name: String, version: String, path: P
   Ok(())
 }
 
-pub fn global(pool: &ThreadPool, name: String, version: String) -> Result<()> {
+pub fn global(name: String, version: String) -> Result<()> {
   let home_dir = dirs::home_dir().ok_or_else(|| anyhow!("Failed to get home dir"))?;
-  use_version_for_dir(pool, name, version, home_dir)
+  use_version_for_dir(name, version, home_dir)
 }
 
-pub fn local(pool: &ThreadPool, name: String, version: String) -> Result<()> {
-  use_version_for_dir(pool, name, version, std::env::current_dir()?)
+pub fn local(name: String, version: String) -> Result<()> {
+  use_version_for_dir(name, version, std::env::current_dir()?)
 }
 
-pub fn shell(pool: &ThreadPool, name: String, version: String) -> Result<()> {
+pub fn shell(name: String, version: String) -> Result<()> {
   let scripts = get_plugin_scripts(&name)?;
 
-  let version = scripts.resolve(pool, &version)?.unwrap();
+  let version = scripts.resolve(&version)?.unwrap();
   if !scripts.version_installed(&version) {
     bail!(
       "Version `{}` is not installed for plugin `{}`",

@@ -1,23 +1,29 @@
 use std::{
-  collections::{HashMap, HashSet},
-  ffi::OsString,
-  fs,
-  io::{BufRead, BufReader},
-  os::unix::prelude::PermissionsExt,
+  collections::{HashMap, HashSet, VecDeque},
+  ffi::{OsStr, OsString},
+  fs::{self, File},
+  io::{self, BufRead, BufReader, Read},
+  os::unix::prelude::{AsRawFd, FromRawFd, PermissionsExt},
   path::{Path, PathBuf},
+  process::{Child, Command, ExitStatus},
   time::Duration,
 };
 
 use console::{style, Style};
-use flume::Receiver;
 use indicatif::{ProgressBar, ProgressStyle};
 use lazy_static::lazy_static;
 use log::{info, trace};
+use mio::{unix::pipe::Receiver, Events, Interest, Token};
 use regex::Regex;
 use thiserror::Error;
 use threadpool::ThreadPool;
 
 use crate::PROGRESS;
+
+const STDOUT: Token = Token(0);
+const STDERR: Token = Token(1);
+
+const BUFFER_SIZE: usize = 9;
 
 #[derive(Error, Debug)]
 pub enum ProcessError {
@@ -30,8 +36,6 @@ pub enum ProcessError {
   #[error("process returned a non-zero exit code:\n{0}")]
   Failed(String),
 }
-
-pub type BackgroundProcess<T> = (ProgressBar, Receiver<Result<T, ProcessError>>);
 
 lazy_static! {
   pub static ref PROGRESS_STYLE: ProgressStyle =
@@ -50,8 +54,6 @@ lazy_static! {
         "⠏",
         &style("✔").green().to_string()
       ]);
-  pub static ref DONE_STYLE: ProgressStyle =
-    ProgressStyle::with_template("{prefix} {wide_msg}").expect("failed to create done style");
 }
 
 pub fn auto_bar() -> ProgressBar {
@@ -62,8 +64,7 @@ pub fn auto_bar() -> ProgressBar {
   bar
 }
 
-pub fn run_background<Cmd, T>(
-  pool: &ThreadPool,
+pub fn run_with_progress<Cmd, T>(
   bar: Option<ProgressBar>,
   message: String,
   auto_finish: bool,
@@ -72,128 +73,99 @@ pub fn run_background<Cmd, T>(
   dir: Option<&Path>,
   env: Option<&[(&str, &str)]>,
   parse_output: impl FnOnce(String) -> T + Send + 'static,
-) -> Result<BackgroundProcess<T>, ProcessError>
+) -> Result<(T, ProgressBar), ProcessError>
 where
-  Cmd: Into<OsString> + duct::IntoExecutablePath,
+  Cmd: AsRef<OsStr>,
   T: 'static + Send,
 {
-  let mut expr = if let Some(args) = args {
-    duct::cmd(command, args)
-  } else {
-    duct::cmd!(command)
-  };
+  let mut cmd = Command::new(command);
 
-  expr = expr.stdout_capture().unchecked();
+  if let Some(args) = args {
+    cmd.args(args);
+  }
 
   if let Some(path) = dir {
-    expr = expr.dir(path);
+    cmd.current_dir(path);
   }
 
   if let Some(env) = env {
-    trace!("Setting env for background process:\n{env:#?}");
+    trace!("Setting env for process:\n{env:#?}");
     for (key, val) in env {
-      expr = expr.env(key, val);
+      cmd.env(key, val);
     }
   }
 
-  let (tx, rx) = flume::bounded(1);
-  let bar = auto_bar();
+  let bar = bar.unwrap_or_else(|| auto_bar());
   let result_bar = bar.clone();
+  bar.set_message(message.clone());
 
-  let (mut stderr_read, stderr_write) = os_pipe::pipe()?;
+  let (status, output_str, all_output) = read_process(cmd, &bar, &message)?;
+  bar.set_message(message.clone());
 
-  pool.execute(move || {
-    bar.set_message(message.clone());
+  trace!("Got process output:\n{output_str}");
 
-    // This moves stderr_write into the temporary duct::Expression that drops at the end of
-    // this statement. That's important; retaining it would deadlock the read loop below.
-    let handle = match expr.stderr_file(stderr_write).start() {
-      Ok(handle) => handle,
-      Err(err) => {
-        let _ = tx.send(Err(err.into()));
-        return;
-      }
-    };
+  if !status.success() {
+    return Err(ProcessError::Failed(all_output));
+  }
 
-    let reader = BufReader::new(stderr_read).lines();
-    let mut lines = Vec::new();
+  let parsed = parse_output(output_str);
 
-    for line in reader {
-      let line = match line {
-        Ok(line) => line,
-        Err(_) => continue,
-      };
+  if auto_finish {
+    bar.finish();
+  }
 
-      lines.push(line);
-      let mut last_lines = lines
-        .iter()
-        .filter(|line| !line.is_empty())
-        .rev()
-        .take(3)
-        .map(|line| format!("    {}", line))
-        .collect::<Vec<_>>();
-
-      last_lines.reverse();
-      if last_lines.is_empty() {
-        continue;
-      }
-
-      bar.set_message(format!(
-        "{}\n{}",
-        message.clone(),
-        style(last_lines.join("\n")).dim()
-      ));
-    }
-
-    let output = match handle.wait() {
-      Ok(output) => output,
-      Err(err) => {
-        let _ = tx.send(Err(err.into()));
-        return;
-      }
-    };
-
-    let output_str = match String::from_utf8(output.stdout.clone()) {
-      Ok(output_str) => output_str,
-      Err(err) => {
-        let _ = tx.send(Err(err.into()));
-        return;
-      }
-    };
-
-    trace!("Got background process output:\n{output_str}");
-    if !output.status.success() {
-      let stderr_output = lines.join("\n");
-      let mut combined = String::new();
-      if !output_str.is_empty() {
-        combined.push_str(&output_str);
-      }
-
-      if !stderr_output.is_empty() {
-        if !combined.is_empty() {
-          combined.push('\n');
-        }
-
-        combined.push_str(&stderr_output);
-      }
-
-      let _ = tx.send(Err(ProcessError::Failed(combined)));
-      return;
-    }
-
-    let parsed = parse_output(output_str);
-
-    if auto_finish {
-      bar.finish();
-    }
-
-    let _ = tx.send(Ok(parsed));
-  });
-
-  Ok((result_bar, rx))
+  Ok((parsed, bar))
 }
 
-pub fn run_foreground<Cmd, T>(
+fn read_process(
+  cmd: Command,
+  bar: &ProgressBar,
+  message: &str,
+) -> Result<(ExitStatus, String, String), io::Error> {
+  let mut lines = Vec::new();
+  let mut stdout_lines = Vec::new();
+  let reader = ProcessReader::start(cmd)?;
+
+  for line in reader {
+    let line = match line {
+      Ok(Out::Done(status)) => {
+        let stdout = stdout_lines.join("\n");
+        let all_output = lines.join("\n");
+        return Ok((status, stdout, all_output));
+      }
+      Ok(Out::Stdout(line)) => {
+        stdout_lines.push(line.clone());
+        line
+      }
+      Ok(Out::Stderr(line)) => line,
+      Err(err) => return Err(err),
+    };
+
+    lines.push(line);
+    let mut last_lines = lines
+      .iter()
+      .filter(|line| !line.is_empty())
+      .rev()
+      .take(3)
+      .map(|line| format!("    {}", line))
+      .collect::<Vec<_>>();
+
+    last_lines.reverse();
+    if last_lines.is_empty() {
+      continue;
+    }
+
+    bar.set_message(format!(
+      "{}\n{}",
+      message.clone(),
+      style(last_lines.join("\n")).dim()
+    ));
+  }
+
+  unreachable!()
+}
+
+pub fn run<Cmd, T>(
   command: Cmd,
   args: Option<&[&str]>,
   dir: Option<&Path>,
@@ -201,28 +173,26 @@ pub fn run_foreground<Cmd, T>(
   parse_output: impl FnOnce(String) -> T,
 ) -> Result<T, ProcessError>
 where
-  Cmd: Into<OsString> + duct::IntoExecutablePath,
+  Cmd: AsRef<OsStr>,
 {
-  let mut expr = if let Some(args) = args {
-    duct::cmd(command, args)
-  } else {
-    duct::cmd!(command)
-  };
+  let mut cmd = Command::new(command);
 
-  expr = expr.stderr_capture().stdout_capture().unchecked();
+  if let Some(args) = args {
+    cmd.args(args);
+  }
 
   if let Some(path) = dir {
-    expr = expr.dir(path);
+    cmd.current_dir(path);
   }
 
   if let Some(env) = env {
-    trace!("Setting env for background process:\n{env:#?}");
+    trace!("Setting env for process:\n{env:#?}");
     for (key, val) in env {
-      expr = expr.env(key, val);
+      cmd.env(key, val);
     }
   }
 
-  let output = expr.run()?;
+  let output = cmd.output()?;
   let output_str = String::from_utf8(output.stdout)?;
   trace!("Got process output:\n{output_str}");
 
@@ -231,4 +201,171 @@ where
   }
 
   Ok(parse_output(output_str))
+}
+
+#[derive(Clone, Debug)]
+enum Out {
+  Stdout(String),
+  Stderr(String),
+  Done(ExitStatus),
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Stream {
+  Stdout,
+  Stderr,
+}
+
+struct ProcessReader {
+  child: Child,
+
+  stdout_read: Receiver,
+  stderr_read: Receiver,
+
+  stdout_buf: Vec<u8>,
+  stderr_buf: Vec<u8>,
+  output_buf: VecDeque<Out>,
+
+  poll: mio::Poll,
+  events: mio::Events,
+  done: bool,
+}
+
+impl ProcessReader {
+  pub fn start(mut cmd: Command) -> Result<Self, io::Error> {
+    let (stdout_write, mut stdout_read) = mio::unix::pipe::new()?;
+    let (stderr_write, mut stderr_read) = mio::unix::pipe::new()?;
+
+    let stdout_file = unsafe { File::from_raw_fd(stdout_write.as_raw_fd()) };
+    let stderr_file = unsafe { File::from_raw_fd(stderr_write.as_raw_fd()) };
+
+    let child = cmd.stdout(stdout_file).stderr(stderr_file).spawn()?;
+
+    let poll = mio::Poll::new()?;
+    let events = Events::with_capacity(128);
+
+    poll
+      .registry()
+      .register(&mut stdout_read, STDOUT, Interest::READABLE)?;
+    poll
+      .registry()
+      .register(&mut stderr_read, STDERR, Interest::READABLE)?;
+
+    let stdout_buf = Vec::<u8>::new();
+    let stderr_buf = Vec::<u8>::new();
+    let output_buf = VecDeque::<Out>::new();
+
+    Ok(Self {
+      child,
+      stdout_read,
+      stderr_read,
+
+      stdout_buf,
+      stderr_buf,
+      output_buf,
+
+      poll,
+      events,
+      done: false,
+    })
+  }
+}
+
+fn read_pipe(
+  reader: &mut Receiver,
+  str_buf: &mut Vec<u8>,
+  out_buf: &mut VecDeque<Out>,
+  which: Stream,
+) -> Result<(), io::Error> {
+  loop {
+    let mut buf = [0; BUFFER_SIZE];
+    let n = match reader.read(&mut buf[..]) {
+      Err(err) if err.kind() == io::ErrorKind::WouldBlock => {
+        return Ok(());
+      }
+      Ok(n) => Ok(n),
+      err => err,
+    }?;
+
+    if n == 0 {
+      return Ok(());
+    }
+
+    for i in 0..n {
+      if buf[i] == b'\n' {
+        let line = String::from_utf8_lossy(&str_buf[..]).to_string();
+        match which {
+          Stream::Stdout => out_buf.push_back(Out::Stdout(line)),
+          Stream::Stderr => out_buf.push_back(Out::Stderr(line)),
+        };
+
+        str_buf.clear();
+        continue;
+      }
+
+      if buf[i] == b'\r' {
+        continue;
+      }
+
+      str_buf.push(buf[i]);
+    }
+  }
+}
+
+impl Iterator for ProcessReader {
+  type Item = Result<Out, io::Error>;
+
+  fn next(&mut self) -> Option<Self::Item> {
+    if self.done {
+      return None;
+    }
+
+    loop {
+      if let Some(next) = self.output_buf.pop_front() {
+        return Some(Ok(next));
+      }
+
+      match self.poll.poll(&mut self.events, None) {
+        Err(err) => return Some(Err(err)),
+        _ => {}
+      };
+
+      for event in self.events.iter() {
+        match event.token() {
+          STDOUT => match read_pipe(
+            &mut self.stdout_read,
+            &mut self.stdout_buf,
+            &mut self.output_buf,
+            Stream::Stdout,
+          ) {
+            Err(err) => return Some(Err(err)),
+            _ => {}
+          },
+          STDERR => match read_pipe(
+            &mut self.stderr_read,
+            &mut self.stderr_buf,
+            &mut self.output_buf,
+            Stream::Stderr,
+          ) {
+            Err(err) => return Some(Err(err)),
+            _ => {}
+          },
+          _ => unreachable!(),
+        }
+      }
+
+      if !self.output_buf.is_empty() {
+        continue;
+      }
+
+      match self.child.try_wait() {
+        Ok(Some(status)) => {
+          self.done = true;
+          return Some(Ok(Out::Done(status)));
+        }
+        Ok(None) => continue,
+        Err(err) => return Some(Err(err)),
+      };
+    }
+  }
 }

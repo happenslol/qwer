@@ -1,11 +1,10 @@
 use anyhow::Result;
 use dialoguer::{theme::ColorfulTheme, FuzzySelect, Select};
-use threadpool::ThreadPool;
 
 use crate::plugins;
 
-pub fn select_plugin(pool: &ThreadPool) -> Result<String> {
-  let available_plugins = plugins::list_all(pool)?;
+pub fn select_plugin() -> Result<String> {
+  let available_plugins = plugins::list_all()?;
   let plugin_options = available_plugins
     .iter()
     .map(|plugin| plugin.name.clone())
@@ -21,6 +20,6 @@ pub fn select_plugin(pool: &ThreadPool) -> Result<String> {
   Ok(String::new())
 }
 
-pub fn select_version(pool: &ThreadPool) -> Result<String> {
+pub fn select_version() -> Result<String> {
   Ok(String::new())
 }

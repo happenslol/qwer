@@ -10,7 +10,6 @@ use console::style;
 use log::trace;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use threadpool::ThreadPool;
 
 use crate::{
   dirs::{get_data_dir, get_dir, get_plugin_scripts, PLUGINS_DIR, REGISTRIES_DIR},
@@ -56,13 +55,13 @@ fn load_registries() -> Result<HashMap<String, Registry>> {
   Ok(toml::from_str(&contents)?)
 }
 
-fn update_registry(pool: &ThreadPool, url: &str, name: &str, _force: bool) -> Result<()> {
+fn update_registry(url: &str, name: &str, _force: bool) -> Result<()> {
   let registry_dir = get_dir(REGISTRIES_DIR)?.join(name);
   let message = format!("Cloning plugin registry {}", style(name).bold());
 
   if !registry_dir.is_dir() {
     let registries_dir = get_dir(REGISTRIES_DIR)?;
-    git::GitRepo::clone(pool, &registries_dir, url, name, None, Some(&message))?;
+    git::GitRepo::clone(&registries_dir, url, name, None, Some(&message))?;
   } else {
     let mut registries = load_registries()?;
     let last_sync = registries.get(name).map(|reg| reg.last_sync).unwrap_or(0);
@@ -78,7 +77,7 @@ fn update_registry(pool: &ThreadPool, url: &str, name: &str, _force: bool) -> Re
     }
 
     let repo = git::GitRepo::new(&registry_dir)?;
-    repo.update_to_remote_head(pool, None, None)?;
+    repo.update_to_remote_head(None, None)?;
 
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
     registries.insert(name.to_owned(), Registry { last_sync: now });
@@ -88,7 +87,7 @@ fn update_registry(pool: &ThreadPool, url: &str, name: &str, _force: bool) -> Re
   Ok(())
 }
 
-pub fn add(pool: &ThreadPool, name: String, git_url: Option<String>) -> Result<()> {
+pub fn add(name: String, git_url: Option<String>) -> Result<()> {
   let plugin_dir = get_dir(PLUGINS_DIR)?;
   let add_plugin_dir = plugin_dir.join(&name);
   if add_plugin_dir.is_dir() {
@@ -104,16 +103,15 @@ pub fn add(pool: &ThreadPool, name: String, git_url: Option<String>) -> Result<(
   };
 
   git::GitRepo::clone(
-    pool,
     &plugin_dir,
     &git_url,
     &name,
     None,
-    Some("Installing plugin {}"),
+    Some(&format!("Installing plugin {}", style(&name).blue().bold())),
   )?;
 
   let scripts = get_plugin_scripts(&name)?;
-  scripts.post_plugin_add(pool, &git_url)?;
+  scripts.post_plugin_add(&git_url)?;
 
   Ok(())
 }
@@ -132,13 +130,8 @@ pub struct PluginListEntry {
   pub installed: bool,
 }
 
-pub fn list(pool: &ThreadPool) -> Result<Vec<PluginListEntry>> {
-  update_registry(
-    pool,
-    DEFAULT_PLUGIN_REGISTRY_URL,
-    DEFAULT_PLUGIN_REGISTRY,
-    false,
-  )?;
+pub fn list() -> Result<Vec<PluginListEntry>> {
+  update_registry(DEFAULT_PLUGIN_REGISTRY_URL, DEFAULT_PLUGIN_REGISTRY, false)?;
 
   let plugin_dir = get_dir(PLUGINS_DIR)?;
   Ok(
@@ -166,13 +159,8 @@ pub fn list(pool: &ThreadPool) -> Result<Vec<PluginListEntry>> {
   )
 }
 
-pub fn list_all(pool: &ThreadPool) -> Result<Vec<PluginListEntry>> {
-  update_registry(
-    pool,
-    DEFAULT_PLUGIN_REGISTRY_URL,
-    DEFAULT_PLUGIN_REGISTRY,
-    false,
-  )?;
+pub fn list_all() -> Result<Vec<PluginListEntry>> {
+  update_registry(DEFAULT_PLUGIN_REGISTRY_URL, DEFAULT_PLUGIN_REGISTRY, false)?;
 
   let registry_dir = get_dir(REGISTRIES_DIR)?.join(DEFAULT_PLUGIN_REGISTRY);
   let plugins_dir = get_dir(PLUGINS_DIR)?;

@@ -9,7 +9,6 @@ use console::style;
 use log::{info, trace};
 use num_threads::num_threads;
 use tabled::{object::Segment, Alignment, Modify, Table, Tabled};
-use threadpool::ThreadPool;
 
 use crate::{
   dirs::{get_data_dir, get_dir, get_plugin_scripts, INSTALLS_DIR, PLUGINS_DIR, REGISTRIES_DIR},
@@ -24,8 +23,8 @@ fn display_option(opt: &Option<String>) -> String {
   }
 }
 
-pub fn add(pool: &ThreadPool, name: String, git_url: Option<String>) -> Result<()> {
-  plugins::add(pool, name, git_url)
+pub fn add(name: String, git_url: Option<String>) -> Result<()> {
+  plugins::add(name, git_url)
 }
 
 #[derive(Tabled)]
@@ -39,8 +38,8 @@ struct ListItem {
   rref: Option<String>,
 }
 
-pub fn list(pool: &ThreadPool, urls: bool, refs: bool) -> Result<()> {
-  let plugins = plugins::list(pool)?;
+pub fn list(urls: bool, refs: bool) -> Result<()> {
+  let plugins = plugins::list()?;
   if plugins.is_empty() {
     println!("No plugins installed");
     return Ok(());
@@ -85,8 +84,8 @@ struct ListAllItem {
   url: String,
 }
 
-pub fn list_all(pool: &ThreadPool) -> Result<()> {
-  let plugins = plugins::list_all(pool)?;
+pub fn list_all() -> Result<()> {
+  let plugins = plugins::list_all()?;
 
   let plugin_items = plugins.into_iter().map(|entry| ListAllItem {
     name: entry.name,
@@ -102,7 +101,7 @@ pub fn list_all(pool: &ThreadPool) -> Result<()> {
   Ok(())
 }
 
-pub fn remove(pool: &ThreadPool, name: String) -> Result<()> {
+pub fn remove(name: String) -> Result<()> {
   let plugin_dir = get_dir(PLUGINS_DIR)?;
   let remove_plugin_dir = plugin_dir.join(&name);
   if !remove_plugin_dir.is_dir() {
@@ -110,15 +109,19 @@ pub fn remove(pool: &ThreadPool, name: String) -> Result<()> {
   }
 
   let scripts = get_plugin_scripts(&name)?;
-  scripts.pre_plugin_remove(pool)?;
+  scripts.pre_plugin_remove()?;
 
   fs::remove_dir_all(remove_plugin_dir)?;
-  fs::remove_dir_all(get_dir(INSTALLS_DIR)?.join(&name))?;
+
+  let install_dir = get_dir(INSTALLS_DIR)?.join(&name);
+  if install_dir.is_dir() {
+    fs::remove_dir_all(install_dir)?;
+  }
 
   Ok(())
 }
 
-pub fn update(pool: &ThreadPool, name: String, git_ref: Option<String>) -> Result<()> {
+pub fn update(name: String, git_ref: Option<String>) -> Result<()> {
   let update_plugin_dir = get_dir(PLUGINS_DIR)?.join(&name);
   if !update_plugin_dir.is_dir() {
     bail!("Plugin {} is not installed", style(&name).bold());
@@ -130,7 +133,6 @@ pub fn update(pool: &ThreadPool, name: String, git_ref: Option<String>) -> Resul
   if let Some(git_ref) = git_ref {
     println!("");
     repo.update_to_ref(
-      pool,
       &git_ref,
       Some(&format!(
         "Updating plugin {} to version {}",
@@ -142,7 +144,6 @@ pub fn update(pool: &ThreadPool, name: String, git_ref: Option<String>) -> Resul
     // TODO: Does update without a ref always mean we
     // want to go to the head ref?
     repo.update_to_remote_head(
-      pool,
       Some(&format!(
         "Finding latest version for plugin {}",
         style(&name).bold()
@@ -156,12 +157,12 @@ pub fn update(pool: &ThreadPool, name: String, git_ref: Option<String>) -> Resul
 
   let scripts = get_plugin_scripts(&name)?;
   let post = repo.get_head_ref()?;
-  scripts.post_plugin_update(pool, &prev, &post)?;
+  scripts.post_plugin_update(&prev, &post)?;
 
   Ok(())
 }
 
-pub fn update_all(pool: &mut ThreadPool) -> Result<()> {
+pub fn update_all() -> Result<()> {
   let plugin_dir = get_dir(PLUGINS_DIR)?;
   let dirs = fs::read_dir(plugin_dir)?.collect::<Vec<_>>();
   let mut repos = Vec::with_capacity(dirs.len());
@@ -177,27 +178,26 @@ pub fn update_all(pool: &mut ThreadPool) -> Result<()> {
   }
 
   // TODO: This is janky as hell
-  pool.set_num_threads(repos.len());
-  for (name, repo) in repos {
-    pool.execute(move || {
-      let pool = ThreadPool::new(1);
-
-      // TODO: Do we always want to update to the remote head
-      // ref here, or skip ones that are pinned?
-      repo.update_to_remote_head(
-        &pool,
-        Some(&format!(
-          "Finding remote head branch for plugin {}",
-          style(&name).bold()
-        )),
-        Some(&format!(
-          "Updating plugin {} to latest version",
-          style(&name).bold()
-        )),
-      );
-    });
-  }
-
-  pool.join();
+  // pool.set_num_threads(repos.len());
+  // for (name, repo) in repos {
+  //   pool.execute(move || {
+  //     let pool = ThreadPool::new(1);
+  //
+  //     // TODO: Do we always want to update to the remote head
+  //     // ref here, or skip ones that are pinned?
+  //     repo.update_to_remote_head(
+  //       Some(&format!(
+  //         "Finding remote head branch for plugin {}",
+  //         style(&name).bold()
+  //       )),
+  //       Some(&format!(
+  //         "Updating plugin {} to latest version",
+  //         style(&name).bold()
+  //       )),
+  //     );
+  //   });
+  // }
+  //
+  // pool.join();
   Ok(())
 }
