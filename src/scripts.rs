@@ -155,13 +155,15 @@ impl PluginScripts {
     let list_all_script = self.plugin_dir.join("bin/list-all");
     self.assert_script_exists(&list_all_script)?;
     let bar = auto_bar();
-
-    Ok(self.run_script(
+    let result = self.run_script(
       Some((&bar, &format!("Running {}:list-all", self.name))),
       &list_all_script,
       &[],
       |output| output.trim().split(' ').map(|v| v.to_owned()).collect(),
-    )?)
+    )?;
+
+    bar.finish();
+    Ok(result)
   }
 
   pub fn plugin_installed(&self) -> bool {
@@ -192,8 +194,7 @@ impl PluginScripts {
     let list_all_script = self.plugin_dir.join("bin/list-all");
     self.assert_script_exists(&list_all_script)?;
     let bar = auto_bar();
-
-    Ok(self.run_script(
+    let result = self.run_script(
       Some((&bar, &format!("Resolving latest for {}", self.name))),
       &list_all_script,
       &[],
@@ -204,7 +205,10 @@ impl PluginScripts {
           .last()
           .map(|version| Version::parse(version))
       },
-    )?)
+    )?;
+
+    bar.finish();
+    Ok(result)
   }
 
   pub fn has_download(&self) -> bool {
@@ -234,8 +238,7 @@ impl PluginScripts {
 
     fs::create_dir_all(&version_download_dir)?;
     let bar = auto_bar();
-
-    Ok(self.run_script(
+    let result = self.run_script(
       Some((&bar, &format!("Running {}:download", self.name))),
       &download_script,
       &[
@@ -245,7 +248,10 @@ impl PluginScripts {
         (ASDF_DOWNLOAD_PATH, &version_download_dir.to_string_lossy()),
       ],
       |_| Some(()),
-    )?)
+    )?;
+
+    bar.finish();
+    Ok(result)
   }
 
   pub fn install(
@@ -284,8 +290,7 @@ impl PluginScripts {
       .unwrap_or(1);
 
     let bar = auto_bar();
-
-    Ok(self.run_script(
+    let result = self.run_script(
       Some((&bar, &format!("Running {}:install", self.name))),
       &install_script,
       &[
@@ -296,7 +301,10 @@ impl PluginScripts {
         (ASDF_CONCURRENCY, &concurrency.to_string()),
       ],
       |output| Some(output),
-    )?)
+    )?;
+
+    bar.finish();
+    Ok(result)
   }
 
   pub fn has_uninstall(&self) -> bool {
@@ -345,8 +353,7 @@ impl PluginScripts {
     let uninstall_script = self.plugin_dir.join("bin/uninstall");
     self.assert_script_exists(&uninstall_script)?;
     let bar = auto_bar();
-
-    Ok(self.run_script(
+    let result = self.run_script(
       Some((&bar, &format!("Running {}:uninstall", self.name))),
       &uninstall_script,
       &[
@@ -355,7 +362,10 @@ impl PluginScripts {
         (ASDF_INSTALL_PATH, &version_install_dir.to_string_lossy()),
       ],
       |output| Some(output),
-    )?)
+    )?;
+
+    bar.finish();
+    Ok(result)
   }
 
   // Help strings
@@ -575,18 +585,18 @@ impl PluginScripts {
     let path = self.plugin_dir.join("bin/latest-stable");
     let bar = auto_bar();
 
-    match path.is_file() {
-      true => Ok(self.run_script(
+    let result = match path.is_file() {
+      true => self.run_script(
         Some((&bar, &format!("Running {}:latest-stable", self.name))),
         &path,
         &[],
         |output| Some(Version::parse(output.trim())),
-      )?),
+      )?,
       false => {
         let list_all_script = self.plugin_dir.join("bin/list-all");
 
         self.assert_script_exists(&list_all_script)?;
-        Ok(self.run_script(
+        self.run_script(
           Some((
             &bar,
             &format!("Resolving latest-stable from {}:list-all", self.name),
@@ -601,9 +611,12 @@ impl PluginScripts {
               .last()
               .map(|version| Version::parse(version))
           },
-        )?)
+        )?
       }
-    }
+    };
+
+    bar.finish();
+    Ok(result)
   }
 
   // Hooks
@@ -615,13 +628,15 @@ impl PluginScripts {
     }
 
     let bar = auto_bar();
-
-    Ok(self.run_script(
+    let result = self.run_script(
       Some((&bar, &format!("Running {}:post-plugin-add", self.name))),
       &path,
       &[(ASDF_PLUGIN_SOURCE_URL, install_url)],
       |_| Some(()),
-    )?)
+    )?;
+
+    bar.finish();
+    Ok(result)
   }
 
   pub fn post_plugin_update(
@@ -635,8 +650,7 @@ impl PluginScripts {
     }
 
     let bar = auto_bar();
-
-    Ok(self.run_script(
+    let result = self.run_script(
       Some((&bar, &format!("Running {}:post-plugin-update", self.name))),
       &path,
       &[
@@ -645,7 +659,10 @@ impl PluginScripts {
         (ASDF_PLUGIN_POST_REF, post),
       ],
       |_| Some(()),
-    )?)
+    )?;
+
+    bar.finish();
+    Ok(result)
   }
 
   pub fn pre_plugin_remove(&self) -> Result<Option<()>, PluginScriptError> {
@@ -655,13 +672,15 @@ impl PluginScripts {
     }
 
     let bar = auto_bar();
-
-    Ok(self.run_script(
+    let result = self.run_script(
       Some((&bar, &format!("Running {}:pre-plugin-remove", self.name))),
       &path,
       &[(ASDF_PLUGIN_PATH, &*self.plugin_dir.to_string_lossy())],
       |_| Some(()),
-    )?)
+    )?;
+
+    bar.finish();
+    Ok(result)
   }
 
   // Extensions

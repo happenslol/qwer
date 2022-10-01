@@ -25,7 +25,7 @@ twox-hash = "1.6.3"
 snap = "1.0.5"
 num_threads = "0.1.6"
 serde = { version = "1.0.137", features = ["derive"] }
-indicatif = { git = "https://github.com/happenslol/indicatif", branch = "improve-multiline-progress-support" }
+indicatif = { git = "https://github.com/happenslol/indicatif" }
 dialoguer = { version = "0.10.2", features = ["fuzzy-select"] }
 mio = { version = "0.8.4", features = ["os-poll", "os-ext"] }
 

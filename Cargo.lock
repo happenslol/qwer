@@ -225,8 +225,8 @@ dependencies = [
 
 [[package]]
 name = "indicatif"
-version = "0.17.0-rc.11"
-source = "git+https://github.com/happenslol/indicatif?branch=improve-multiline-progress-support#1467bc566198d7fef4e4aab1a2787a936f4c2ca2"
+version = "0.17.1"
+source = "git+https://github.com/happenslol/indicatif#14b5ef279e8de045912a449676ccb32f7ce2d37f"
 dependencies = [
  "console",
  "number_prefix",

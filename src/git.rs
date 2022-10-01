@@ -186,6 +186,8 @@ impl GitRepo {
       |_| (),
     )?;
 
+    bar.finish();
+
     trace!("Resetting to origin/{remote_default_branch}");
     let remote_ref = format!("origin/{remote_default_branch}");
     self.run_git(None, &["reset", "--hard", &remote_ref], |_| ())?;

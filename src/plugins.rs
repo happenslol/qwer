@@ -64,6 +64,7 @@ fn update_registry(url: &str, name: &str, force: bool) -> Result<()> {
     let registries_dir = get_dir(REGISTRIES_DIR)?;
     let bar = auto_bar();
     git::GitRepo::clone((&bar, &message), &registries_dir, url, name, None)?;
+    bar.finish();
   } else {
     let mut registries = load_registries()?;
     let last_sync = registries.get(name).map(|reg| reg.last_sync).unwrap_or(0);
@@ -116,6 +117,7 @@ pub fn add(name: String, git_url: Option<String>) -> Result<()> {
     &name,
     None,
   )?;
+  bar.finish();
 
   let scripts = get_plugin_scripts(&name)?;
   scripts.post_plugin_add(&git_url)?;
