@@ -21,7 +21,7 @@ use crate::PROGRESS;
 const STDOUT: Token = Token(0);
 const STDERR: Token = Token(1);
 
-const BUFFER_SIZE: usize = 9;
+const BUFFER_SIZE: usize = 32;
 
 #[derive(Error, Debug)]
 pub enum ProcessError {
@@ -300,7 +300,16 @@ impl Iterator for ProcessReader {
         return Some(Ok(Out::Done(status)));
       }
 
-      match self.poll.poll(&mut self.events, None) {
+      match self.child.try_wait() {
+        Ok(None) => {}
+        Ok(Some(status)) => {
+          self.status = Some(status);
+          continue;
+        }
+        Err(err) => return Some(Err(err)),
+      };
+
+      match self.poll.poll(&mut self.events, Some(Duration::from_millis(100))) {
         Err(err) => return Some(Err(err)),
         _ => {}
       };
@@ -328,19 +337,6 @@ impl Iterator for ProcessReader {
           _ => unreachable!(),
         }
       }
-
-      if !self.output_buf.is_empty() {
-        continue;
-      }
-
-      match self.child.try_wait() {
-        Ok(Some(status)) => {
-          self.status = Some(status);
-          continue;
-        }
-        Ok(None) => continue,
-        Err(err) => return Some(Err(err)),
-      };
     }
   }
 }
