@@ -14,6 +14,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use lazy_static::lazy_static;
 use log::trace;
 use mio::{unix::pipe::Receiver, Events, Interest, Token};
+use regex::Regex;
 use thiserror::Error;
 
 use crate::PROGRESS;
@@ -52,6 +53,8 @@ lazy_static! {
         "⠏",
         &style("✔").green().to_string()
       ]);
+
+  static ref FILTER_STDERR: Regex = Regex::new("\\x1b\\[[0-9;]*[mGKHF]").unwrap();
 }
 
 pub type Progress<'a> = (&'a ProgressBar, &'a str);
@@ -143,7 +146,7 @@ fn read_process(
       .filter(|line| !line.is_empty())
       .rev()
       .take(3)
-      .map(|line| format!("    {}", line))
+      .map(|line| format!("    {}", FILTER_STDERR.replace_all(line, "")))
       .collect::<Vec<_>>();
 
     last_lines.reverse();
