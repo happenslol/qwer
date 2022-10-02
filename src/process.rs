@@ -22,7 +22,7 @@ use crate::PROGRESS;
 const STDOUT: Token = Token(0);
 const STDERR: Token = Token(1);
 
-const BUFFER_SIZE: usize = 32;
+const BUFFER_SIZE: usize = 1024;
 
 #[derive(Error, Debug)]
 pub enum ProcessError {
@@ -53,7 +53,6 @@ lazy_static! {
         "⠏",
         &style("✔").green().to_string()
       ]);
-
   static ref FILTER_STDERR: Regex = Regex::new("\\x1b\\[[0-9;]*[mGKHF]").unwrap();
 }
 
@@ -97,7 +96,7 @@ where
 
   let (status, output_str, all_output) = if let Some((bar, message)) = show_progress {
     bar.set_message(message.to_string());
-    let (status, output_str, all_output) = read_process(cmd, &bar, &message)?;
+    let (status, output_str, all_output) = read_process(cmd, bar, message)?;
     bar.set_message(message.to_string());
     (status, output_str, all_output)
   } else {
@@ -156,7 +155,7 @@ fn read_process(
 
     bar.set_message(format!(
       "{}\n{}",
-      message.clone(),
+      message,
       style(last_lines.join("\n")).dim()
     ));
   }
@@ -264,8 +263,8 @@ fn read_pipe(
       return Ok(());
     }
 
-    for i in 0..n {
-      if buf[i] == b'\n' {
+    for char in buf.into_iter().take(n) {
+      if char == b'\n' {
         let line = String::from_utf8_lossy(&str_buf[..]).to_string();
         match which {
           Stream::Stdout => out_buf.push_back(Out::Stdout(line)),
@@ -276,11 +275,11 @@ fn read_pipe(
         continue;
       }
 
-      if buf[i] == b'\r' {
+      if char == b'\r' {
         continue;
       }
 
-      str_buf.push(buf[i]);
+      str_buf.push(char);
     }
   }
 }
@@ -312,31 +311,35 @@ impl Iterator for ProcessReader {
         Err(err) => return Some(Err(err)),
       };
 
-      match self.poll.poll(&mut self.events, Some(Duration::from_millis(100))) {
-        Err(err) => return Some(Err(err)),
-        _ => {}
-      };
+      if let Err(err) = self
+        .poll
+        .poll(&mut self.events, Some(Duration::from_millis(100)))
+      {
+        return Some(Err(err));
+      }
 
       for event in self.events.iter() {
         match event.token() {
-          STDOUT => match read_pipe(
-            &mut self.stdout_read,
-            &mut self.stdout_buf,
-            &mut self.output_buf,
-            Stream::Stdout,
-          ) {
-            Err(err) => return Some(Err(err)),
-            _ => {}
-          },
-          STDERR => match read_pipe(
-            &mut self.stderr_read,
-            &mut self.stderr_buf,
-            &mut self.output_buf,
-            Stream::Stderr,
-          ) {
-            Err(err) => return Some(Err(err)),
-            _ => {}
-          },
+          STDOUT => {
+            if let Err(err) = read_pipe(
+              &mut self.stdout_read,
+              &mut self.stdout_buf,
+              &mut self.output_buf,
+              Stream::Stdout,
+            ) {
+              return Some(Err(err));
+            }
+          }
+          STDERR => {
+            if let Err(err) = read_pipe(
+              &mut self.stderr_read,
+              &mut self.stderr_buf,
+              &mut self.output_buf,
+              Stream::Stderr,
+            ) {
+              return Some(Err(err));
+            }
+          }
           _ => unreachable!(),
         }
       }

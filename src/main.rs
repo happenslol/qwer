@@ -16,6 +16,7 @@ mod dirs;
 mod env;
 mod git;
 mod plugins;
+mod pretty;
 mod process;
 mod scripts;
 mod shell;
@@ -227,7 +228,7 @@ fn main() -> Result<()> {
     .parse_env("QWER_LOG")
     .format(|buf, record| {
       let level = match record.level() {
-        log::Level::Info => style("==>").bold().cyan(),
+        log::Level::Info => style("==>").cyan(),
         log::Level::Error => style("error:").bold().red(),
         log::Level::Warn => style("warn:").bold().yellow(),
         log::Level::Debug => style("debug:").bold().blue(),
@@ -354,9 +355,8 @@ fn main() -> Result<()> {
     }
   };
 
-  match result {
-    Err(err) => error!("{}", err),
-    _ => {}
+  if let Err(err) = result {
+    error!("{}", err);
   }
 
   Ok(())

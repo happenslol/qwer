@@ -6,6 +6,8 @@ use log::{info, trace};
 
 use crate::{
   dirs::{get_plugin_scripts, TOOL_VERSIONS},
+  pretty,
+  process::auto_bar,
   versions::{Version, Versions},
 };
 
@@ -97,19 +99,11 @@ fn install(
     bail!("Can't install system version");
   }
 
-  info!("Installing {} {}", &name, resolved.raw());
-
   if scripts.has_download() {
     scripts.download(&resolved)?;
   }
 
   scripts.install(&resolved, concurrency)?;
-
-  info!(
-    "Installed {} {}",
-    style(name).bold(),
-    style(resolved.raw()).bold()
-  );
 
   if !keep_download {
     scripts.rm_version_download(&resolved)?;
@@ -122,21 +116,39 @@ pub fn uninstall(name: String, version: String) -> Result<()> {
   let scripts = get_plugin_scripts(&name)?;
   let version = Version::parse(&version);
   if !scripts.version_installed(&version) {
-    bail!("version {} is not installed", version.version_str());
+    bail!(
+      "{} is not installed",
+      pretty::plugin_version(&name, version.version_str()),
+    );
   }
 
-  info!("Uninstalling {} {}", &name, version.raw());
+  let bar = auto_bar();
+  bar.set_message(format!(
+    "Uninstalling {}...",
+    pretty::plugin_version(&name, version.version_str()),
+  ));
 
   if scripts.has_uninstall() {
-    scripts.uninstall(&version)?;
+    scripts.uninstall(
+      (
+        &bar,
+        &format!(
+          "Running uninstall script for plugin {}...",
+          pretty::plugin(&name)
+        ),
+      ),
+      &version,
+    )?;
   } else {
     scripts.rm_version(&version)?;
   }
 
   // Just in case this wasn't cleaned earlier
   scripts.rm_version_download(&version)?;
-
-  info!("Uninstalled {} {}", &name, version.raw());
+  bar.finish_with_message(format!(
+    "Uninstalled {}",
+    pretty::plugin_version(&name, version.version_str()),
+  ));
 
   Ok(())
 }

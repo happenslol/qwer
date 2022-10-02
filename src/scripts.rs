@@ -6,6 +6,7 @@ use std::{
   process::Command,
 };
 
+use anyhow::{bail, Result};
 use lazy_static::lazy_static;
 use log::trace;
 use regex::Regex;
@@ -13,6 +14,7 @@ use thiserror::Error;
 
 use crate::{
   env::{Env, IGNORED_ENV_VARS},
+  pretty,
   process::{auto_bar, run, ProcessError, Progress},
   versions::Version,
 };
@@ -49,7 +51,7 @@ pub enum PluginScriptError {
   #[error("version `{version}` for plugin `{plugin}` was not installed")]
   VersionNotInstalled { version: String, plugin: String },
 
-  #[error("version `{version}` for plugin `{plugin}` was already installed")]
+  #[error("Version `{version}` for plugin `{plugin}` was already installed")]
   VersionAlreadyInstalled { version: String, plugin: String },
 
   #[error("no versions were found")]
@@ -74,7 +76,7 @@ impl PluginScripts {
     installs: Install,
     downloads: Download,
     extra_path: &[&str],
-  ) -> Result<Self, PluginScriptError>
+  ) -> Result<Self>
   where
     Plugin: AsRef<Path>,
     Install: AsRef<Path>,
@@ -121,21 +123,21 @@ impl PluginScripts {
     script_path: P,
     env: &[(&str, &str)],
     parse_output: impl FnOnce(String) -> T + 'static,
-  ) -> Result<T, ProcessError> {
+  ) -> Result<T> {
     log_script(script_path.as_ref());
     let env = self.merge_env(env);
 
-    run(
+    Ok(run(
       show_progress,
       script_path.as_ref(),
       None,
       None,
       Some(&env),
       parse_output,
-    )
+    )?)
   }
 
-  fn assert_script_exists<P: AsRef<Path>>(&self, script: P) -> Result<(), PluginScriptError> {
+  fn assert_script_exists<P: AsRef<Path>>(&self, script: P) -> Result<()> {
     if log::log_enabled!(log::Level::Trace) {
       trace!("Asserting script `{:?}` exists", script.as_ref());
     }
@@ -143,7 +145,7 @@ impl PluginScripts {
     if !script.as_ref().is_file() {
       return Err(PluginScriptError::ScriptNotFound(
         script.as_ref().to_string_lossy().to_string(),
-      ));
+      ))?;
     }
 
     Ok(())
@@ -151,18 +153,24 @@ impl PluginScripts {
 
   // Basic functionality
 
-  pub fn list_all(&self) -> Result<Vec<String>, PluginScriptError> {
+  pub fn list_all(&self) -> Result<Vec<String>> {
     let list_all_script = self.plugin_dir.join("bin/list-all");
     self.assert_script_exists(&list_all_script)?;
     let bar = auto_bar();
     let result = self.run_script(
-      Some((&bar, &format!("Running {}:list-all", self.name))),
+      Some((
+        &bar,
+        &format!("Fetching versions for {}...", pretty::plugin(&self.name)),
+      )),
       &list_all_script,
       &[],
       |output| output.trim().split(' ').map(|v| v.to_owned()).collect(),
     )?;
 
-    bar.finish();
+    bar.finish_with_message(format!(
+      "Fetched versions for {}...",
+      pretty::plugin(&self.name)
+    ));
     Ok(result)
   }
 
@@ -174,23 +182,25 @@ impl PluginScripts {
     self.install_dir.join(version.version_str()).is_dir()
   }
 
-  pub fn find_version(&self, version: &str) -> Result<Version, PluginScriptError> {
+  pub fn find_version(&self, version: &str) -> Result<Version> {
     let parsed = Version::parse(version);
     match parsed {
-      Version::Version(version_str) => {
+      Version::Remote(version_str) => {
         let versions = self.list_all()?;
 
-        versions
-          .iter()
-          .find(|raw| &version_str == *raw)
-          .ok_or(PluginScriptError::NoVersionsFound)
-          .map(|raw| Version::parse(raw))
+        Ok(
+          versions
+            .iter()
+            .find(|raw| &version_str == *raw)
+            .ok_or(PluginScriptError::NoVersionsFound)
+            .map(|raw| Version::parse(raw))?,
+        )
       }
       _ => Ok(parsed),
     }
   }
 
-  pub fn latest(&self) -> Result<Option<Version>, PluginScriptError> {
+  pub fn latest(&self) -> Result<Option<Version>> {
     let list_all_script = self.plugin_dir.join("bin/list-all");
     self.assert_script_exists(&list_all_script)?;
     let bar = auto_bar();
@@ -198,13 +208,7 @@ impl PluginScripts {
       Some((&bar, &format!("Resolving latest for {}", self.name))),
       &list_all_script,
       &[],
-      |output| {
-        output
-          .trim()
-          .split(' ')
-          .last()
-          .map(|version| Version::parse(version))
-      },
+      |output| output.trim().split(' ').last().map(Version::parse),
     )?;
 
     bar.finish();
@@ -215,7 +219,7 @@ impl PluginScripts {
     self.plugin_dir.join("bin/download").is_file()
   }
 
-  pub fn download(&self, version: &Version) -> Result<Option<()>, PluginScriptError> {
+  pub fn download(&self, version: &Version) -> Result<Option<()>> {
     if version == &Version::System {
       return Ok(None);
     }
@@ -230,16 +234,22 @@ impl PluginScripts {
     let version_download_dir = self.download_dir.join(version_str);
     let version_install_dir = self.install_dir.join(version_str);
     if version_install_dir.is_dir() {
-      return Err(PluginScriptError::VersionAlreadyInstalled {
-        plugin: self.name.clone(),
-        version: version.raw(),
-      });
+      bail!(
+        "{} is already installed",
+        pretty::plugin_version(&self.name, version.version_str())
+      );
     }
 
     fs::create_dir_all(&version_download_dir)?;
     let bar = auto_bar();
     let result = self.run_script(
-      Some((&bar, &format!("Running {}:download", self.name))),
+      Some((
+        &bar,
+        &format!(
+          "Downloading {}...",
+          pretty::plugin_version(&self.name, version.version_str())
+        ),
+      )),
       &download_script,
       &[
         (ASDF_INSTALL_TYPE, version.install_type()),
@@ -250,15 +260,14 @@ impl PluginScripts {
       |_| Some(()),
     )?;
 
-    bar.finish();
+    bar.finish_with_message(format!(
+      "Downloaded {}",
+      pretty::plugin_version(&self.name, version.version_str())
+    ));
     Ok(result)
   }
 
-  pub fn install(
-    &self,
-    version: &Version,
-    concurrency: Option<usize>,
-  ) -> Result<Option<String>, PluginScriptError> {
+  pub fn install(&self, version: &Version, concurrency: Option<usize>) -> Result<Option<String>> {
     trace!(
       "Installing version {version:?} for plugin `{:?}` to `{:?}`",
       self.plugin_dir,
@@ -280,7 +289,7 @@ impl PluginScripts {
       return Err(PluginScriptError::VersionAlreadyInstalled {
         plugin: self.name.clone(),
         version: version.raw(),
-      });
+      })?;
     }
 
     fs::create_dir_all(&version_install_dir)?;
@@ -291,7 +300,13 @@ impl PluginScripts {
 
     let bar = auto_bar();
     let result = self.run_script(
-      Some((&bar, &format!("Running {}:install", self.name))),
+      Some((
+        &bar,
+        &format!(
+          "Installing {}...",
+          pretty::plugin_version(&self.name, version.version_str())
+        ),
+      )),
       &install_script,
       &[
         (ASDF_INSTALL_TYPE, version.install_type()),
@@ -300,10 +315,13 @@ impl PluginScripts {
         (ASDF_DOWNLOAD_PATH, &version_download_dir.to_string_lossy()),
         (ASDF_CONCURRENCY, &concurrency.to_string()),
       ],
-      |output| Some(output),
+      Some,
     )?;
 
-    bar.finish();
+    bar.finish_with_message(format!(
+      "Installed {}",
+      pretty::plugin_version(&self.name, version.version_str())
+    ));
     Ok(result)
   }
 
@@ -311,7 +329,7 @@ impl PluginScripts {
     self.plugin_dir.join("bin/uninstall").is_file()
   }
 
-  pub fn rm_version(&self, version: &Version) -> Result<(), PluginScriptError> {
+  pub fn rm_version(&self, version: &Version) -> Result<()> {
     let version_dir = self.install_dir.join(version.version_str());
     if !version_dir.is_dir() {
       return Ok(());
@@ -320,7 +338,7 @@ impl PluginScripts {
     Ok(fs::remove_dir_all(&version_dir)?)
   }
 
-  pub fn rm_version_download(&self, version: &Version) -> Result<(), PluginScriptError> {
+  pub fn rm_version_download(&self, version: &Version) -> Result<()> {
     let dl_dir = self.download_dir.join(version.version_str());
     if !dl_dir.is_dir() {
       return Ok(());
@@ -329,7 +347,7 @@ impl PluginScripts {
     Ok(fs::remove_dir_all(&dl_dir)?)
   }
 
-  pub fn uninstall(&self, version: &Version) -> Result<Option<String>, PluginScriptError> {
+  pub fn uninstall(&self, progress: Progress, version: &Version) -> Result<Option<String>> {
     trace!(
       "Uninstalling version {version:?} for plugin `{:?}` from `{:?}`",
       self.plugin_dir,
@@ -347,56 +365,44 @@ impl PluginScripts {
       return Err(PluginScriptError::VersionNotInstalled {
         plugin: self.name.clone(),
         version: version.raw(),
-      });
+      })?;
     }
 
     let uninstall_script = self.plugin_dir.join("bin/uninstall");
     self.assert_script_exists(&uninstall_script)?;
-    let bar = auto_bar();
     let result = self.run_script(
-      Some((&bar, &format!("Running {}:uninstall", self.name))),
+      Some(progress),
       &uninstall_script,
       &[
         (ASDF_INSTALL_TYPE, version.install_type()),
         (ASDF_INSTALL_VERSION, version_str),
         (ASDF_INSTALL_PATH, &version_install_dir.to_string_lossy()),
       ],
-      |output| Some(output),
+      Some,
     )?;
 
-    bar.finish();
     Ok(result)
   }
 
   // Help strings
 
-  pub fn help_overview(
-    &self,
-    version: Option<&Version>,
-  ) -> Result<Option<String>, PluginScriptError> {
+  pub fn help_overview(&self, version: Option<&Version>) -> Result<Option<String>> {
     self.get_help_str("overview", version)
   }
 
-  pub fn help_deps(&self, version: Option<&Version>) -> Result<Option<String>, PluginScriptError> {
+  pub fn help_deps(&self, version: Option<&Version>) -> Result<Option<String>> {
     self.get_help_str("deps", version)
   }
 
-  pub fn help_config(
-    &self,
-    version: Option<&Version>,
-  ) -> Result<Option<String>, PluginScriptError> {
+  pub fn help_config(&self, version: Option<&Version>) -> Result<Option<String>> {
     self.get_help_str("config", version)
   }
 
-  pub fn help_links(&self, version: Option<&Version>) -> Result<Option<String>, PluginScriptError> {
+  pub fn help_links(&self, version: Option<&Version>) -> Result<Option<String>> {
     self.get_help_str("links", version)
   }
 
-  fn get_help_str(
-    &self,
-    which: &str,
-    version: Option<&Version>,
-  ) -> Result<Option<String>, PluginScriptError> {
+  fn get_help_str(&self, which: &str, version: Option<&Version>) -> Result<Option<String>> {
     let script_name = format!("bin/help.{which}");
     let help_path = self.plugin_dir.join(&script_name);
 
@@ -417,7 +423,7 @@ impl PluginScripts {
 
   // Paths
 
-  pub fn list_bin_paths(&self, version: &Version) -> Result<Vec<String>, PluginScriptError> {
+  pub fn list_bin_paths(&self, version: &Version) -> Result<Vec<String>> {
     let script_path = self.plugin_dir.join("bin/list-bin-paths");
     if !script_path.is_file() {
       let default_bin_path = self.install_dir.join(version.version_str()).join("bin");
@@ -447,13 +453,13 @@ impl PluginScripts {
     Ok(output)
   }
 
-  pub fn get_version_path(&self, version: &Version) -> Result<PathBuf, PluginScriptError> {
+  pub fn get_version_path(&self, version: &Version) -> Result<PathBuf> {
     let result = self.install_dir.join(version.raw());
     if !result.is_dir() {
       return Err(PluginScriptError::VersionNotInstalled {
         plugin: self.name.clone(),
         version: version.raw(),
-      });
+      })?;
     }
 
     Ok(result)
@@ -461,10 +467,7 @@ impl PluginScripts {
 
   // Env modification
 
-  pub fn exec_env_echo(
-    &self,
-    version: &Version,
-  ) -> Result<Option<Vec<(String, String)>>, PluginScriptError> {
+  pub fn exec_env_echo(&self, version: &Version) -> Result<Option<Vec<(String, String)>>> {
     // TODO: Do we need to support adding to path entries here?
 
     let version_dir = self.install_dir.join(version.version_str());
@@ -519,10 +522,7 @@ impl PluginScripts {
   // NOTE: This is potentially a better version of getting
   // an env diff, but it's a lot slower than simply replacing
   // export with echo.
-  pub fn _exec_env_diff(
-    &self,
-    version: &Version,
-  ) -> Result<Option<Vec<(String, String)>>, PluginScriptError> {
+  pub fn _exec_env_diff(&self, version: &Version) -> Result<Option<Vec<(String, String)>>> {
     // TODO: Do we need to support adding to path entries here?
 
     // This is pretty stupid, but there's no way for us to know
@@ -581,7 +581,7 @@ impl PluginScripts {
 
   // Latest resolution
 
-  pub fn latest_stable(&self) -> Result<Option<Version>, PluginScriptError> {
+  pub fn latest_stable(&self) -> Result<Option<Version>> {
     let path = self.plugin_dir.join("bin/latest-stable");
     let bar = auto_bar();
 
@@ -609,7 +609,7 @@ impl PluginScripts {
               .split(' ')
               .filter(|version| !LATEST_STABLE_RE.is_match(version))
               .last()
-              .map(|version| Version::parse(version))
+              .map(Version::parse)
           },
         )?
       }
@@ -621,7 +621,7 @@ impl PluginScripts {
 
   // Hooks
 
-  pub fn post_plugin_add(&self, install_url: &str) -> Result<Option<()>, PluginScriptError> {
+  pub fn post_plugin_add(&self, install_url: &str) -> Result<Option<()>> {
     let path = self.plugin_dir.join("bin/post-plugin-add");
     if !path.is_file() {
       return Ok(None);
@@ -639,11 +639,7 @@ impl PluginScripts {
     Ok(result)
   }
 
-  pub fn post_plugin_update(
-    &self,
-    prev: &str,
-    post: &str,
-  ) -> Result<Option<()>, PluginScriptError> {
+  pub fn post_plugin_update(&self, prev: &str, post: &str) -> Result<Option<()>> {
     let path = self.plugin_dir.join("bin/post-plugin-add");
     if !path.is_file() {
       return Ok(None);
@@ -665,7 +661,7 @@ impl PluginScripts {
     Ok(result)
   }
 
-  pub fn pre_plugin_remove(&self) -> Result<Option<()>, PluginScriptError> {
+  pub fn pre_plugin_remove(&self) -> Result<Option<()>> {
     let path = self.plugin_dir.join("bin/post-plugin-add");
     if !path.is_file() {
       return Ok(None);
@@ -685,7 +681,7 @@ impl PluginScripts {
 
   // Extensions
 
-  pub fn list_extensions(&self) -> Result<HashMap<String, PathBuf>, PluginScriptError> {
+  pub fn list_extensions(&self) -> Result<HashMap<String, PathBuf>> {
     let command_dir = self.plugin_dir.join("lib").join("commands");
     if !command_dir.is_dir() {
       return Ok(HashMap::new());
@@ -713,7 +709,7 @@ impl PluginScripts {
     Ok(result)
   }
 
-  pub fn extension<P: AsRef<Path>>(&self, ext: P, args: &[&str]) -> Result<(), PluginScriptError> {
+  pub fn extension<P: AsRef<Path>>(&self, ext: P, args: &[&str]) -> Result<()> {
     Command::new(ext.as_ref())
       .args(args)
       .env("PATH", &self.script_env_path)
@@ -725,7 +721,7 @@ impl PluginScripts {
 
   // Helpers
 
-  pub fn get_env(&self, version: &Version) -> Result<Env, PluginScriptError> {
+  pub fn get_env(&self, version: &Version) -> Result<Env> {
     let mut env = Env::default();
 
     // first, see if there's an exec-env
@@ -754,11 +750,11 @@ impl PluginScripts {
     Ok(env)
   }
 
-  pub fn resolve(&self, version: &str) -> Result<Option<Version>, PluginScriptError> {
+  pub fn resolve(&self, version: &str) -> Result<Option<Version>> {
     match version {
       "latest" => self.latest(),
       "latest-stable" => self.latest_stable(),
-      _ => self.find_version(version).map(|it| Some(it)),
+      _ => self.find_version(version).map(Some),
     }
   }
 }

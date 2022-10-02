@@ -27,7 +27,7 @@ pub enum VersionsError {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Version {
-  Version(String),
+  Remote(String),
   Ref(String),
   Path(String),
   System,
@@ -67,12 +67,12 @@ impl Version {
       return Version::Path(path);
     }
 
-    Version::Version(raw.to_owned())
+    Version::Remote(raw.to_owned())
   }
 
   pub fn install_type(&self) -> &'static str {
     match self {
-      Self::Version(_) => "version",
+      Self::Remote(_) => "version",
       Self::Ref(_) => "ref",
       Self::Path(_) => "path",
       Self::System => "system",
@@ -81,7 +81,7 @@ impl Version {
 
   pub fn version_str(&self) -> &str {
     match self {
-      Self::Version(version) => version,
+      Self::Remote(version) => version,
       Self::Ref(rref) => rref,
       Self::Path(path) => path,
       Self::System => "",
@@ -90,7 +90,7 @@ impl Version {
 
   pub fn raw(&self) -> String {
     match self {
-      Self::Version(version) => version.to_owned(),
+      Self::Remote(version) => version.to_owned(),
       Self::Ref(rref) => format!("ref:{rref}"),
       Self::Path(path) => format!("path:{path}"),
       Self::System => "system".to_owned(),
@@ -299,15 +299,15 @@ multiple 1 ref:123 system
     let versions = Versions::parse(to_parse).expect("failed to parse versions");
 
     assert_eq!(versions.len(), 6);
-    assert_eq!(versions["foo"], &[Version::Version("1.2.3".to_owned())]);
-    assert_eq!(versions["bar"], &[Version::Version("2.1".to_owned())]);
+    assert_eq!(versions["foo"], &[Version::Remote("1.2.3".to_owned())]);
+    assert_eq!(versions["bar"], &[Version::Remote("2.1".to_owned())]);
     assert_eq!(versions["ref"], &[Version::Ref("123".to_owned())]);
     assert_eq!(versions["path"], &[Version::Path("/foo/bar".to_owned())]);
     assert_eq!(versions["system"], &[Version::System]);
     assert_eq!(
       versions["multiple"],
       &[
-        Version::Version("1".to_owned()),
+        Version::Remote("1".to_owned()),
         Version::Ref("123".to_owned()),
         Version::System,
       ]
@@ -338,7 +338,7 @@ foo 2.1
     fs::write(workdir.as_ref().join("v"), "foo 1").expect("failed to write versions");
 
     let versions = Versions::_find_any(workdir.as_ref(), "v").expect("failed to find versions");
-    assert_eq!(versions["foo"], &[Version::Version("1".to_owned())]);
+    assert_eq!(versions["foo"], &[Version::Remote("1".to_owned())]);
   }
 
   #[test]
@@ -366,6 +366,6 @@ foo 2.1
     fs::write(workdir.as_ref().join("v"), "foo 1").expect("failed to write versions");
 
     let versions = Versions::_find_any(subdir, "v").expect("failed to find versions");
-    assert_eq!(versions["foo"], &[Version::Version("1".to_owned())]);
+    assert_eq!(versions["foo"], &[Version::Remote("1".to_owned())]);
   }
 }

@@ -147,29 +147,27 @@ pub fn list(force_refresh: bool) -> Result<Vec<PluginListEntry>> {
   )?;
 
   let plugin_dir = get_dir(PLUGINS_DIR)?;
-  Ok(
-    fs::read_dir(&plugin_dir)?
-      .map(|dir| {
-        let dir = dir?;
+  fs::read_dir(&plugin_dir)?
+    .map(|dir| {
+      let dir = dir?;
 
-        let name = String::from(dir.file_name().to_string_lossy());
-        let repo = git::GitRepo::new(dir.path())?;
+      let name = String::from(dir.file_name().to_string_lossy());
+      let repo = git::GitRepo::new(dir.path())?;
 
-        let url = repo.get_remote_url()?;
+      let url = repo.get_remote_url()?;
 
-        let branch = repo.get_head_branch()?;
-        let gitref = repo.get_head_ref()?;
-        let rref = format!("{branch} {gitref}");
+      let branch = repo.get_head_branch()?;
+      let gitref = repo.get_head_ref()?;
+      let rref = format!("{branch} {gitref}");
 
-        Ok(PluginListEntry {
-          name,
-          url,
-          rref,
-          installed: true,
-        })
+      Ok(PluginListEntry {
+        name,
+        url,
+        rref,
+        installed: true,
       })
-      .collect::<Result<Vec<_>>>()?,
-  )
+    })
+    .collect::<Result<Vec<_>>>()
 }
 
 pub fn list_all(force_refresh: bool) -> Result<Vec<PluginListEntry>> {
@@ -182,39 +180,37 @@ pub fn list_all(force_refresh: bool) -> Result<Vec<PluginListEntry>> {
   let registry_dir = get_dir(REGISTRIES_DIR)?.join(DEFAULT_PLUGIN_REGISTRY);
   let plugins_dir = get_dir(PLUGINS_DIR)?;
 
-  Ok(
-    fs::read_dir(registry_dir.join("plugins"))?
-      .map(|plugin| {
-        let plugin = plugin?;
-        let name = String::from(plugin.file_name().to_string_lossy());
-        let url = parse_short_repo_url(&registry_dir, &name)?;
+  fs::read_dir(registry_dir.join("plugins"))?
+    .map(|plugin| {
+      let plugin = plugin?;
+      let name = String::from(plugin.file_name().to_string_lossy());
+      let url = parse_short_repo_url(&registry_dir, &name)?;
 
-        let installed_plugin_dir = plugins_dir.join(&name);
-        let (installed, rref) = if installed_plugin_dir.is_dir() {
-          let repo = git::GitRepo::new(&installed_plugin_dir)?;
-          let remote_url = repo.get_remote_url()?;
+      let installed_plugin_dir = plugins_dir.join(&name);
+      let (installed, rref) = if installed_plugin_dir.is_dir() {
+        let repo = git::GitRepo::new(&installed_plugin_dir)?;
+        let remote_url = repo.get_remote_url()?;
 
-          let installed_url = normalize_repo_url(&remote_url);
-          let registry_url = normalize_repo_url(&remote_url);
+        let installed_url = normalize_repo_url(&remote_url);
+        let registry_url = normalize_repo_url(&remote_url);
 
-          let branch = repo.get_head_branch()?;
-          let gitref = repo.get_head_ref()?;
-          let rref = format!("{branch} {gitref}");
+        let branch = repo.get_head_branch()?;
+        let gitref = repo.get_head_ref()?;
+        let rref = format!("{branch} {gitref}");
 
-          (installed_url == registry_url, rref)
-        } else {
-          (false, String::new())
-        };
+        (installed_url == registry_url, rref)
+      } else {
+        (false, String::new())
+      };
 
-        Ok(PluginListEntry {
-          name,
-          url,
-          rref,
-          installed,
-        })
+      Ok(PluginListEntry {
+        name,
+        url,
+        rref,
+        installed,
       })
-      .collect::<Result<Vec<_>>>()?,
-  )
+    })
+    .collect::<Result<Vec<_>>>()
 }
 
 /// Retrieve the repository url from a directory containing plugin references.
